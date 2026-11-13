@@ -404,7 +404,6 @@
 
   .y-axis-tick text {
     fill: rgba(255, 255, 255, 0.85);
-    font-family: Montserrat;
     font-size: 11px;
   }
 
@@ -429,7 +428,6 @@
   }
 
   .area-chart-label {
-    font-family: Montserrat;
     font-size: 12px;
     pointer-events: none;
     text-anchor: middle;
@@ -462,14 +460,12 @@
 
   .men-missingness-label {
     fill: rgba(125, 211, 252, 0.7);
-    font-family: Montserrat;
     font-size: 11px;
     pointer-events: none;
   }
 
   .women-missingness-label {
     fill: rgba(255, 255, 255, 0.7);
-    font-family: Montserrat;
     font-size: 11px;
     pointer-events: none;
   }
@@ -481,7 +477,6 @@
   .line-head-label {
     fill: #fff;
     font-size: 11px;
-    font-family: Montserrat;
     pointer-events: none;
   }
   .projection-line {

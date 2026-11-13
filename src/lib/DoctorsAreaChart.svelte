@@ -143,7 +143,6 @@
 
   .doctor-line-head-label {
     fill: rgb(180, 180, 180);
-    font-family: Montserrat;
     font-size: 11px;
     pointer-events: none;
   }

@@ -4,6 +4,8 @@
   import { tweened } from "svelte/motion";
   import { getCSV, getJson } from "./lib/utils/loaders";
   import { creditsByYear } from "./lib/utils/const";
+  import AppIntro from "./lib/AppIntro.svelte";
+  import AppLoadingScreen from "./lib/AppLoadingScreen.svelte";
   import BackgroundMap from "./lib/BackgroundMap.svelte";
   import MainTimeline from "./lib/MainTimeline.svelte";
 
@@ -13,11 +15,6 @@
   const startYear = 1582;
   const universityEstablishedYear = 1582;
   const endYear = 2026;
-
-  // TODO
-  // - look up some timeline visualizations
-  // - get in touch with threadinburgh!!!
-  // - finish up timers/pauses for all milestones
 
   const timelineZoomTriggerYear = 1862;
   const timelineResetTriggerYear = 1914;
@@ -32,6 +29,9 @@
   const timelineStretchTargetEndYear = 1950;
   // Set to false to keep the timeline at its full 1550–2026 range.
   const enableTimelineSpreading = false;
+  const timelineAdvanceYearsPerSecond = 50;
+  const minimumTimelineAdvanceDurationMs = 600;
+  const maximumTimelineAdvanceDurationMs = 3_000;
   const margin = { top: 20, right: 40, bottom: 30, left: 40 };
 
   // keeping the detail div inside screen
@@ -70,8 +70,6 @@
     }
   };
 
-  // Dev-only: set to false or remove this flag and the related blocks below to restore auto-resume.
-  const devRequireClickToResume = true;
   type Milestone = {
     id: string;
     year: number;
@@ -174,57 +172,6 @@
     },
   ];
 
-  type MilestonePlayback = {
-    pauseMs?: number;
-    yearsPerSecondToNext?: number;
-  };
-
-  // Playback controls. A milestone's speed applies after its pause, until the
-  // next milestone; omitted values use the defaults below.
-  const timelinePlayback: {
-    defaultYearsPerSecond: number;
-    defaultPauseMs: number;
-    milestones: Record<string, MilestonePlayback>;
-  } = {
-    defaultYearsPerSecond: 30,
-    defaultPauseMs: 1_000,
-    milestones: {
-      "university-founded": { pauseMs: 1_000, yearsPerSecondToNext: 50 },
-      "map-1682": {
-        pauseMs: 1_000,
-        yearsPerSecondToNext: 50,
-      },
-      "school-of-medicine": {
-        pauseMs: 1_000,
-        yearsPerSecondToNext: 50,
-      },
-      "james-barry": {
-        pauseMs: 1_000,
-        yearsPerSecondToNext: 50,
-      },
-      "elizabeth-garrett": {
-        pauseMs: 1_000,
-        yearsPerSecondToNext: 50,
-      },
-      "first-classes": {
-        pauseMs: 1_000,
-        yearsPerSecondToNext: 50,
-      },
-      "edinburgh-forty": {},
-      "surgeons-hall-riot": {},
-      "physiology-students": {},
-      "school-for-women": {},
-      "college-for-women": {},
-      "school-and-college-students": {},
-      "career-locations": {},
-      "equal-medical-education": {},
-      "international-female-medics": {},
-    },
-  };
-
-  const getMilestonePlayback = (milestoneId: string | null) =>
-    milestoneId ? (timelinePlayback.milestones[milestoneId] ?? {}) : {};
-
   const splitMilestoneYears = new Set([
     1809, 1862, 1867, 1870, 1875, 1886, 1889, 1911,
   ]);
@@ -259,9 +206,8 @@
   let womenCareers1915Data: unknown = null;
   let internationalMedics1926Data: Array<Record<string, string>> = [];
   let currentYear = startYear;
-  let lastYearUpdateMs = 0;
-  let activeYearsPerSecond = timelinePlayback.defaultYearsPerSecond;
-  let animationFrameId: number | null = null;
+  let timelineAdvanceFrameId: number | null = null;
+  let isAdvancingTimeline = false;
   let timelineZoomFrameId: number | null = null;
   let timelineStretchFrameId: number | null = null;
   let hasZoomedTimeline = false;
@@ -271,10 +217,40 @@
   let timelineStretchProgress = 0;
   let timelineDomainStart = startYear;
   let timelineDomainEnd = endYear;
-  let nextPauseIndex = 0;
+  let activeMilestoneIndex = -1;
   let pausedAtYear: number | null = null;
   let pausedMilestoneId: string | null = null;
-  let pauseStartMs: number | null = null;
+  let csvDataReady = false;
+  let jsonDataReady = false;
+  let fontsReady = false;
+  let mapReady = false;
+  let mapWarmupProgress = 0;
+  let loadError = "";
+  let mapInstanceKey = 0;
+  let hasDismissedLoading = false;
+  let introVisible = false;
+  let hasEnteredExperience = false;
+  let reloadData: (() => void) | null = null;
+
+  $: readinessComplete = [csvDataReady, jsonDataReady, fontsReady, mapReady];
+  $: readinessCount = readinessComplete.filter(Boolean).length;
+  $: loadingProgress =
+    ((csvDataReady ? 1 : 0) +
+      (jsonDataReady ? 1 : 0) +
+      (fontsReady ? 1 : 0) +
+      mapWarmupProgress) /
+    readinessComplete.length *
+    100;
+  $: isReadyToEnter = readinessCount === readinessComplete.length && !loadError;
+  $: loadingStatus = !fontsReady
+    ? "Loading type and interface"
+    : !csvDataReady || !jsonDataReady
+      ? "Loading historical data"
+      : !mapReady
+        ? mapWarmupProgress > 0
+          ? "Warming story map views"
+          : "Loading the map"
+        : "Ready";
 
   $: equalMedicalEducationCardBottomOffset.set(
     pausedMilestoneId === "equal-medical-education"
@@ -438,10 +414,6 @@
     }));
   };
 
-  // Dev-only: remove these two variables with the click-to-resume behavior.
-  let awaitingResumeClick = false;
-  let resumeRequested = false;
-
   $: careerCountryCounts = buildCareerCountryCounts(womenCareers1915Data);
   $: orderedEdinburghFortyData = [...edinburghSevenData].sort(
     (personA, personB) =>
@@ -604,10 +576,112 @@
     startTimelineDomainTransition(startYear, endYear);
   }
 
-  // Dev-only: remove this handler together with the Continue button markup.
-  const handleResumeClick = () => {
-    resumeRequested = true;
-    awaitingResumeClick = false;
+  const finishAtMilestone = (index: number) => {
+    const milestone = milestones[index];
+    if (!milestone) return;
+
+    activeMilestoneIndex = index;
+    currentYear = milestone.year;
+    pausedAtYear = milestone.year;
+    pausedMilestoneId = milestone.id;
+  };
+
+  const advanceToMilestone = (index: number) => {
+    const milestone = milestones[index];
+    if (index > milestones.length || isAdvancingTimeline) return;
+
+    if (timelineAdvanceFrameId !== null) {
+      cancelAnimationFrame(timelineAdvanceFrameId);
+    }
+
+    const fromYear = currentYear;
+    const targetYear = milestone?.year ?? endYear;
+    const duration = Math.min(
+      maximumTimelineAdvanceDurationMs,
+      Math.max(
+        minimumTimelineAdvanceDurationMs,
+        (Math.abs(targetYear - fromYear) / timelineAdvanceYearsPerSecond) *
+          1_000,
+      ),
+    );
+    const startedAt = performance.now();
+
+    pausedAtYear = null;
+    pausedMilestoneId = null;
+    isAdvancingTimeline = true;
+
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      currentYear = fromYear + (targetYear - fromYear) * cubicOut(progress);
+
+      if (progress < 1) {
+        timelineAdvanceFrameId = requestAnimationFrame(step);
+        return;
+      }
+
+      currentYear = targetYear;
+      timelineAdvanceFrameId = null;
+      isAdvancingTimeline = false;
+      if (milestone) {
+        finishAtMilestone(index);
+      } else {
+        activeMilestoneIndex = milestones.length;
+      }
+    };
+
+    timelineAdvanceFrameId = requestAnimationFrame(step);
+  };
+
+  const handleNextMilestone = () => {
+    advanceToMilestone(activeMilestoneIndex + 1);
+  };
+
+  const handleLoadingEnter = () => {
+    hasDismissedLoading = true;
+    introVisible = true;
+  };
+
+  const handleExplore = () => {
+    introVisible = false;
+    hasEnteredExperience = true;
+    advanceToMilestone(0);
+  };
+
+  const handleIntroHome = () => {
+    currentYear = startYear;
+    activeMilestoneIndex = -1;
+    pausedAtYear = null;
+    pausedMilestoneId = null;
+    isAdvancingTimeline = false;
+    if (timelineAdvanceFrameId !== null) {
+      cancelAnimationFrame(timelineAdvanceFrameId);
+      timelineAdvanceFrameId = null;
+    }
+  };
+
+  const handleMapReady = () => {
+    mapWarmupProgress = 1;
+    mapReady = true;
+  };
+
+  const handleMapWarmupProgress = (progress: number) => {
+    mapWarmupProgress = Math.max(0, Math.min(1, progress));
+  };
+
+  const handleMapLoadError = () => {
+    if (!mapReady) {
+      loadError = "The map could not be loaded. Check your connection and try again.";
+    }
+  };
+
+  const handleRetry = () => {
+    loadError = "";
+    csvDataReady = false;
+    jsonDataReady = false;
+    mapReady = false;
+    mapWarmupProgress = 0;
+    mapInstanceKey += 1;
+    reloadData?.();
   };
 
   // init
@@ -656,10 +730,12 @@
 
         edinburghSevenData = rawEdinburghSevenData;
         internationalMedics1926Data = rawInternationalMedics1926Data;
+        csvDataReady = true;
 
         // firstClassesData = first_classes;
       } catch (error: unknown) {
         console.error("Failed to load", error);
+        loadError = "The timeline data could not be loaded. Check your connection and try again.";
       }
     };
 
@@ -722,114 +798,34 @@
         womenCareers1915Data = Array.isArray(rawWomenDoctors1915)
           ? rawWomenDoctors1915
           : null;
+        jsonDataReady = true;
       } catch (error: unknown) {
         console.error("Failed to load timeline JSON data", error);
+        loadError = "The map data could not be loaded. Check your connection and try again.";
       }
     };
 
-    loadCsvData();
-    loadJsonData();
+    reloadData = () => {
+      loadCsvData();
+      loadJsonData();
+    };
+    reloadData();
 
-    // Runs once per animation frame and updates timeline state from wall-clock time.
-    const updateYearFromClock = () => {
-      const now = Date.now();
-      // 1) Pause branch: when a milestone pause is active, keep the year frozen.
-      if (pauseStartMs !== null && pausedAtYear !== null) {
-        const pausedMs = now - pauseStartMs;
-        currentYear = pausedAtYear;
-        lastYearUpdateMs = now;
-
-        // 2) After this milestone's configured pause, resume progression.
-        if (
-          pausedMs >=
-          (getMilestonePlayback(pausedMilestoneId).pauseMs ??
-            timelinePlayback.defaultPauseMs)
-        ) {
-          if (devRequireClickToResume && !resumeRequested) {
-            awaitingResumeClick = true;
-            return;
-          }
+    const waitForFonts = async () => {
+      try {
+        await document.fonts?.ready;
+      } catch (error: unknown) {
+        console.warn("Font loading check failed", error);
+      } finally {
+        fontsReady = true;
+      }
+    };
+    waitForFonts();
 
           // Trigger path shrink for the milestone we're leaving — works
-          const nextMilestone = milestones[nextPauseIndex + 1];
-          if (nextMilestone?.year === pausedAtYear) {
-            // Consecutive events at the same timeline year share one visual
-            // milestone stem, so transfer directly without collapsing it.
-            pausedAtYear = nextMilestone.year;
-            pausedMilestoneId = nextMilestone.id;
-            pauseStartMs = now;
-            nextPauseIndex += 1;
-            awaitingResumeClick = false;
-            resumeRequested = false;
-            return;
-          }
-
-          // Apply the completed milestone's speed to the next timeline segment.
-          activeYearsPerSecond =
-            getMilestonePlayback(pausedMilestoneId).yearsPerSecondToNext ??
-            timelinePlayback.defaultYearsPerSecond;
-
-          // Clear pause state so normal timeline movement can continue.
-          pauseStartMs = null;
-          pausedAtYear = null;
-          pausedMilestoneId = null;
-          nextPauseIndex += 1;
-          awaitingResumeClick = false;
-          resumeRequested = false;
-        }
-
-        // While paused, skip normal progression logic.
-        return;
-      }
-
-      // 3) Advance from the prior frame so each milestone can control the
-      // speed of the following timeline segment.
-      const elapsedSeconds = (now - lastYearUpdateMs) / 1_000;
-      currentYear = Math.min(
-        currentYear + elapsedSeconds * activeYearsPerSecond,
-        endYear,
-      );
-      lastYearUpdateMs = now;
-
-      // 4) Enter a new pause when the next milestone is reached.
-      const nextPauseMilestone = milestones[nextPauseIndex];
-      if (
-        nextPauseMilestone !== undefined &&
-        currentYear >= nextPauseMilestone.year
-      ) {
-        currentYear = nextPauseMilestone.year;
-        pausedAtYear = nextPauseMilestone.year;
-        pausedMilestoneId = nextPauseMilestone.id;
-        pauseStartMs = now;
-        awaitingResumeClick = false;
-        resumeRequested = false;
-      }
-    };
-
-    // Anchor the first timeline update to the current wall-clock time.
-    lastYearUpdateMs = Date.now();
-
-    // Frame loop: update state, then queue the next frame until we reach endYear.
-    const animate = () => {
-      updateYearFromClock();
-      if (currentYear < endYear) {
-        animationFrameId = requestAnimationFrame(animate);
-      }
-    };
-
-    animationFrameId = requestAnimationFrame(animate);
-
-    // Keep state coherent when the tab visibility changes.
-    const handleVisibilityChange = () => {
-      updateYearFromClock();
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
     return () => {
-      // Cleanup to prevent a leaked animation loop/listener on component unmount.
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId);
+      if (timelineAdvanceFrameId !== null) {
+        cancelAnimationFrame(timelineAdvanceFrameId);
       }
       if (timelineZoomFrameId !== null) {
         cancelAnimationFrame(timelineZoomFrameId);
@@ -837,38 +833,50 @@
       if (timelineStretchFrameId !== null) {
         cancelAnimationFrame(timelineStretchFrameId);
       }
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      reloadData = null;
     };
   });
 </script>
 
-<main bind:clientWidth={width} bind:clientHeight={height}>
+<main
+  id="experience"
+  class:experience-active={hasEnteredExperience}
+  bind:clientWidth={width}
+  bind:clientHeight={height}
+  aria-hidden={!hasEnteredExperience}
+  inert={!hasEnteredExperience}
+>
   <!-- 1919 map inputs temporarily disabled:
   {womenDoctorsWarData}
   showWomenDoctorsWarLocations={pausedAtYear === womenDoctorsWarMilestoneYear}
   -->
-  <BackgroundMap
-    {currentYear}
-    {garrettJourneyData}
-    {barryJourneyData}
-    {riotData}
-    {womenPhysiologyGeoData}
-    {firstClassesGeoData}
-    {firstClassesPathsData}
-    {physiologyPathsData}
-    {womenDoctorsData}
-    {womenCareers1915Data}
-    {colonies}
-    {suez}
-    {edinburghRoutes}
-    {edinburghSevenData}
-    {internationalMedics1926Data}
-    showWomenDoctorBirthplaces={pausedMilestoneId ===
-      "school-and-college-students"}
-    showWomenDoctorCareerLocations={pausedMilestoneId === "career-locations"}
-    showInternationalMedics1926={pausedMilestoneId ===
-      "international-female-medics"}
-  />
+  {#key mapInstanceKey}
+    <BackgroundMap
+      {currentYear}
+      {garrettJourneyData}
+      {barryJourneyData}
+      {riotData}
+      {womenPhysiologyGeoData}
+      {firstClassesGeoData}
+      {firstClassesPathsData}
+      {physiologyPathsData}
+      {womenDoctorsData}
+      {womenCareers1915Data}
+      {colonies}
+      {suez}
+      {edinburghRoutes}
+      {edinburghSevenData}
+      {internationalMedics1926Data}
+      showWomenDoctorBirthplaces={pausedMilestoneId ===
+        "school-and-college-students"}
+      showWomenDoctorCareerLocations={pausedMilestoneId === "career-locations"}
+      showInternationalMedics1926={pausedMilestoneId ===
+        "international-female-medics"}
+      onReady={handleMapReady}
+      onLoadError={handleMapLoadError}
+      onWarmupProgress={handleMapWarmupProgress}
+    />
+  {/key}
   <img
     class="site-logo"
     src={publicUrl("img/efi_logo_white.svg")}
@@ -885,10 +893,18 @@
       {/if}
     </aside>
   {/if} -->
-  <!-- Dev-only: remove this button block with the click-to-resume behavior. -->
-  {#if devRequireClickToResume && awaitingResumeClick}
-    <button class="resume-button" type="button" on:click={handleResumeClick}>
-      >
+  {#if
+    hasEnteredExperience &&
+    !isAdvancingTimeline &&
+    activeMilestoneIndex >= 0 &&
+    activeMilestoneIndex < milestones.length
+  }
+    <button
+      class="resume-button"
+      type="button"
+      on:click={handleNextMilestone}
+    >
+      Next
     </button>
   {/if}
   <MainTimeline
@@ -1225,6 +1241,19 @@
   {/each}
 </main>
 
+{#if !hasDismissedLoading}
+  <AppLoadingScreen
+    progress={loadingProgress}
+    status={loadingStatus}
+    ready={isReadyToEnter}
+    error={loadError}
+    onEnter={handleLoadingEnter}
+    onRetry={handleRetry}
+  />
+{:else if introVisible}
+  <AppIntro onExplore={handleExplore} onHome={handleIntroHome} />
+{/if}
+
 <style>
   main {
     width: 100%;
@@ -1241,6 +1270,11 @@
     pointer-events: none;
   }
 
+  main:not(.experience-active) .site-logo,
+  main:not(.experience-active) .page-title {
+    opacity: 0;
+  }
+
   .page-title {
     background-color: rgba(0, 0, 0, 0.5);
     position: absolute;
@@ -1251,7 +1285,6 @@
     max-width: calc(100vw - 160px);
     margin: 0;
     color: #fff;
-    font-family: Montserrat;
     font-size: clamp(16px, 2vw, 22px);
     font-weight: 400;
     line-height: 1.2;
@@ -1274,7 +1307,6 @@
     border-radius: 5px;
     background-color: rgba(0, 0, 0, 0.7);
     color: rgb(150, 150, 150);
-    font-family: Montserrat;
     font-size: 12px;
     font-weight: 400;
     font-style: italic;
@@ -1300,7 +1332,6 @@
     justify-content: center;
     color: #ffffffdc;
     background-color: #000;
-    font-family: "Jost";
     font-size: 14px;
     line-height: 1.2;
     text-align: center;
@@ -1595,7 +1626,6 @@
     font-weight: 400;
   }
 
-  /* Dev-only: remove this style block with the Continue button markup. */
   .resume-button {
     position: absolute;
     top: 5px;

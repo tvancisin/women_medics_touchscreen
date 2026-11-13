@@ -38,11 +38,15 @@
   export let showWomenDoctorCareerLocations = false;
   export let showWomenDoctorsWarLocations = false;
   export let showInternationalMedics1926 = false;
+  export let onReady: () => void = () => {};
+  export let onLoadError: (error: unknown) => void = () => {};
+  export let onWarmupProgress: (progress: number) => void = () => {};
 
   // Local Mapbox state
   let map: mapboxgl.Map;
   let mapContainer: HTMLDivElement;
   let styleReady = false;
+  let isDestroyed = false;
   const pathAnimationFrames = new Map<string, number>();
   let hasAnimatedBarryLine = false;
   let hasAnimatedGarrettLine = false;
@@ -2395,6 +2399,60 @@
   }
   */
 
+  type CameraWarmupView = {
+    center: [number, number];
+    zoom: number;
+    offset?: [number, number];
+  };
+
+  const initialMapCamera: CameraWarmupView = {
+    center: [-3.22, 55.95],
+    zoom: 12,
+  };
+
+  // These are the camera positions used by the story. Mapbox's initial load
+  // only prepares the Edinburgh view, so we warm the later UK, Europe and
+  // world views while the app's loading screen is still covering the map.
+  const storyCameraViews: CameraWarmupView[] = [
+    { center: [-5.2883, 53.55], zoom: 6.2 },
+    { center: [-1.1883, 53.55], zoom: 6.2 },
+    { center: [-3.182, 55.947], zoom: 15 },
+    { center: [8.9883, 54.5533], zoom: 5 },
+    { center: [70.1883, 10.9433], zoom: 1.8 },
+    { center: [20.1883, 42.5533], zoom: 3.5 },
+    { center: [20, 20], zoom: 1.8, offset: [0, -90] },
+  ];
+
+  const waitForMapIdle = () =>
+    new Promise<void>((resolve) => {
+      map.once("idle", resolve);
+    });
+
+  const warmStoryCameraViews = async () => {
+    for (const [index, view] of storyCameraViews.entries()) {
+      if (isDestroyed) return false;
+
+      const idle = waitForMapIdle();
+      map.flyTo({
+        ...view,
+        duration: 0,
+        preloadOnly: true,
+      });
+      await idle;
+      onWarmupProgress(((index + 1) / storyCameraViews.length) * 0.95);
+    }
+
+    // Some Mapbox builds still update the camera while handling a preload-only
+    // request. Restore the intended Edinburgh opening view before revealing
+    // the intro, while keeping the warmed tiles in Mapbox's cache.
+    const initialIdle = waitForMapIdle();
+    map.jumpTo(initialMapCamera);
+    await initialIdle;
+    onWarmupProgress(1);
+
+    return true;
+  };
+
   onMount(() => {
     mapboxgl.accessToken = envToken;
     mapboxgl.workerClass = MapboxWorker as unknown as new (
@@ -2403,8 +2461,7 @@
 
     map = new mapboxgl.Map({
       container: mapContainer,
-      center: [-3.22, 55.95],
-      zoom: 12,
+      ...initialMapCamera,
       logoPosition: "top-right",
       // style: "mapbox://styles/mapbox/dark-v12",
       style: "mapbox://styles/tomasvancisin/cmub2wzm7009v01qt4sj39282",
@@ -2414,10 +2471,18 @@
 
     map.on("error", (event) => {
       console.error("Background map error", event.error);
+      if (!styleReady) onLoadError(event.error);
     });
 
-    map.on("load", () => {
+    map.on("load", async () => {
       styleReady = true;
+      try {
+        const completed = await warmStoryCameraViews();
+        if (completed && !isDestroyed) onReady();
+      } catch (error: unknown) {
+        console.error("Background map warm-up failed", error);
+        if (!isDestroyed) onLoadError(error);
+      }
     });
 
     const handleResize = () => {
@@ -2431,6 +2496,7 @@
     window.addEventListener("resize", handleResize);
 
     return () => {
+      isDestroyed = true;
       window.removeEventListener("resize", handleResize);
       map.off("move", updateWomenDoctors1911PhotoBirthplaceConnections);
       map.off("moveend", handleWomenDoctors1911MapFocusEnd);
@@ -2598,7 +2664,6 @@
     color: #fff;
     border-radius: 3px;
     box-shadow: 0 2px 7px rgba(0, 0, 0, 0.4);
-    font-family: "Montserrat", sans-serif;
     font-size: 10px;
     font-weight: 500;
     line-height: 1.25;

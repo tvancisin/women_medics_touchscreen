@@ -144,7 +144,6 @@
   .event-label {
     fill: #fafafa;
     font-size: 16px;
-    font-family: "Montserrat";
     font-weight: 500;
     pointer-events: none;
   }

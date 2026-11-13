@@ -457,7 +457,6 @@
 
   .year-counter {
     fill: #ffffff;
-    font-family: Montserrat;
     font-size: 14px;
     font-weight: 600;
   }
@@ -468,7 +467,6 @@
 
   .year-counter-label {
     fill: #ffffff;
-    font-family: Montserrat;
     font-size: 11px;
   }
 
@@ -483,7 +481,6 @@
   .tick text {
     fill: #fff;
     font-size: 16px;
-    font-family: Montserrat;
   }
 
   .timeline-stretch-ticks .tick text {
@@ -507,7 +504,6 @@
 
   .milestone-comparison text {
     fill: rgba(180, 180, 180, 0.95);
-    font-family: Montserrat;
     font-size: 14px;
     font-weight: 500;
     pointer-events: none;

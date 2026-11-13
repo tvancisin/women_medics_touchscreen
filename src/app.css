@@ -20,11 +20,13 @@
 
 @layer base {
   /* The single source of truth for the app's default typeface.
-   * Montserrat itself is loaded in index.html.
+   * Inter itself is loaded in index.html.
    */
   :root {
-    --font-sans: "Montserrat", sans-serif;
+    --font-sans: Inter, "Helvetica Neue", Helvetica, Arial, ui-sans-serif,
+      system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-family: var(--font-sans);
+    letter-spacing: normal;
   }
 
   /* Force all regular HTML/SVG elements to inherit the root font.
