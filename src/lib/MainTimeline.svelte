@@ -57,6 +57,9 @@
   const mutedInactiveMilestoneYears = new Set([1886, 1889, 1911, 1915]);
   let expandedMilestonePathLength = 0;
   let inactiveMilestoneLabelXs = new Map<string, number>();
+  let milestoneComponents: Record<string, Milestone | null> = {};
+  export const isSettled = () =>
+    Object.values(milestoneComponents).every((component) => !component || component.isSettled());
   const buildTimelineTickValues = (maxYear: number) => {
     const values = [startYear];
     for (let year = 1600; year <= maxYear; year += 50) values.push(year);
@@ -336,6 +339,7 @@
 
     {#each visibleMilestones as milestone (milestone.id)}
       <Milestone
+        bind:this={milestoneComponents[milestone.id]}
         x={yearToX(milestone.year)}
         labelX={inactiveMilestoneLabelXs.get(milestone.id) ??
           yearToX(milestone.year)}
@@ -374,6 +378,7 @@
 
     {#if displayYear === 2026}
       <Milestone
+        bind:this={milestoneComponents["end"]}
         x={yearToX(2026)}
         {height}
         label="2026"
@@ -433,11 +438,6 @@
     stroke-width: 2px;
   }
 
-  .year-indicator-line {
-    stroke: rgba(255, 255, 255, 0.55);
-    stroke-width: 1px;
-  }
-
   .timeline-underlay {
     opacity: 0.4;
   }
@@ -455,21 +455,6 @@
     stroke-width: 1px;
   }
 
-  .year-counter {
-    fill: #ffffff;
-    font-size: 14px;
-    font-weight: 600;
-  }
-
-  .year-counter-background {
-    fill: #151c24;
-  }
-
-  .year-counter-label {
-    fill: #ffffff;
-    font-size: 11px;
-  }
-
   .tick line {
     stroke: #fff;
   }
@@ -481,6 +466,7 @@
   .tick text {
     fill: #fff;
     font-size: 16px;
+    font-weight: 500;
   }
 
   .timeline-stretch-ticks .tick text {

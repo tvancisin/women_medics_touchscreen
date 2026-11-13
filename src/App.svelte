@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { tweened } from "svelte/motion";
   import { getCSV, getJson } from "./lib/utils/loaders";
@@ -211,9 +211,7 @@
   let timelineZoomFrameId: number | null = null;
   let timelineStretchFrameId: number | null = null;
   let hasZoomedTimeline = false;
-  let hasResetTimeline = false;
-  let hasStretchedTimeline = false;
-  let hasResetTimelineStretch = false;
+  let isTimelineStretched = false;
   let timelineStretchProgress = 0;
   let timelineDomainStart = startYear;
   let timelineDomainEnd = endYear;
@@ -231,6 +229,17 @@
   let introVisible = false;
   let hasEnteredExperience = false;
   let reloadData: (() => void) | null = null;
+  let backgroundMap: BackgroundMap;
+  let mainTimeline: MainTimeline;
+  let mapYear = startYear;
+  let mapMilestoneId: string | null = null;
+  let isStepReady = false;
+  let stepError = "";
+  let stepCheckFrameId: number | null = null;
+  let stepCheckVersion = 0;
+  let backButton: HTMLButtonElement;
+  let nextButton: HTMLButtonElement;
+  let navigationDirection = 1;
 
   $: readinessComplete = [csvDataReady, jsonDataReady, fontsReady, mapReady];
   $: readinessCount = readinessComplete.filter(Boolean).length;
@@ -242,15 +251,7 @@
     readinessComplete.length *
     100;
   $: isReadyToEnter = readinessCount === readinessComplete.length && !loadError;
-  $: loadingStatus = !fontsReady
-    ? "Loading type and interface"
-    : !csvDataReady || !jsonDataReady
-      ? "Loading historical data"
-      : !mapReady
-        ? mapWarmupProgress > 0
-          ? "Warming story map views"
-          : "Loading the map"
-        : "Ready";
+  $: loadingStatus = isReadyToEnter ? "Ready" : "Loading";
 
   $: equalMedicalEducationCardBottomOffset.set(
     pausedMilestoneId === "equal-medical-education"
@@ -543,14 +544,10 @@
     return originalX + (stretchedX - originalX) * timelineStretchProgress;
   };
 
-  $: if (currentYear >= timelineStretchTriggerYear && !hasStretchedTimeline) {
-    hasStretchedTimeline = true;
-    startTimelineStretch(1);
-  }
-
-  $: if (currentYear >= timelineStretchResetYear && !hasResetTimelineStretch) {
-    hasResetTimelineStretch = true;
-    startTimelineStretch(0);
+  $: if (isTimelineStretched !==
+    (currentYear >= timelineStretchTriggerYear && currentYear < timelineStretchResetYear)) {
+    isTimelineStretched = !isTimelineStretched;
+    startTimelineStretch(isTimelineStretched ? 1 : 0);
   }
 
   $: if (
@@ -568,27 +565,75 @@
 
   $: if (
     enableTimelineSpreading &&
-    currentYear >= timelineResetTriggerYear &&
-    !hasResetTimeline
+    (currentYear < timelineZoomTriggerYear || currentYear >= timelineResetTriggerYear) &&
+    hasZoomedTimeline
   ) {
-    hasResetTimeline = true;
     hasZoomedTimeline = false;
     startTimelineDomainTransition(startYear, endYear);
   }
 
+  // Inspect the active card, including CSS portraits, rather than delaying
+  // navigation by an estimated loading/animation duration.
+  const waitForStep = async () => {
+    const version = ++stepCheckVersion;
+    await tick();
+    try {
+      const card = document.querySelector(".milestone-card.is-active");
+      await Promise.all(Array.from(card?.querySelectorAll("img, [style]") ?? []).map(async (element) => {
+        if (element instanceof HTMLImageElement) return element.decode();
+        const url = getComputedStyle(element).backgroundImage.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
+        if (url) {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+        }
+      }));
+    } catch {
+      if (version === stepCheckVersion) stepError = "A step image could not load. Check your connection and retry.";
+      return;
+    }
+
+    const check = () => {
+      stepCheckFrameId = null;
+      if (version !== stepCheckVersion || stepError) return;
+      if (mapReady && !isAdvancingTimeline && timelineZoomFrameId === null &&
+        timelineStretchFrameId === null &&
+        $equalMedicalEducationCardBottomOffset === (pausedMilestoneId === "equal-medical-education"
+          ? height / 2 + milestoneCardStemGap : milestoneCardBottomOffset) &&
+        backgroundMap?.isSettled() && mainTimeline?.isSettled()) {
+        isStepReady = true;
+        tick().then(() => {
+          const button = navigationDirection < 0 ? backButton : nextButton;
+          (button?.disabled ? (navigationDirection < 0 ? nextButton : backButton) : button)?.focus({ preventScroll: true });
+        });
+        return;
+      }
+      stepCheckFrameId = requestAnimationFrame(check);
+    };
+    stepCheckFrameId = requestAnimationFrame(check);
+  };
+
   const finishAtMilestone = (index: number) => {
     const milestone = milestones[index];
-    if (!milestone) return;
-
     activeMilestoneIndex = index;
-    currentYear = milestone.year;
-    pausedAtYear = milestone.year;
-    pausedMilestoneId = milestone.id;
+    currentYear = milestone?.year ?? endYear;
+    pausedAtYear = milestone?.year ?? null;
+    pausedMilestoneId = milestone?.id ?? null;
+    waitForStep();
   };
 
   const advanceToMilestone = (index: number) => {
     const milestone = milestones[index];
-    if (index > milestones.length || isAdvancingTimeline) return;
+    if (index < 0 || index > milestones.length || isAdvancingTimeline ||
+      (hasEnteredExperience && activeMilestoneIndex >= 0 && !isStepReady)) return;
+
+    navigationDirection = index < activeMilestoneIndex ? -1 : 1;
+    isStepReady = false;
+    stepError = "";
+    // Only the destination drives map layers/camera; passing an intermediate
+    // integer year while rewinding must not start another milestone's effects.
+    mapYear = milestone?.year ?? endYear;
+    mapMilestoneId = milestone?.id ?? null;
 
     if (timelineAdvanceFrameId !== null) {
       cancelAnimationFrame(timelineAdvanceFrameId);
@@ -596,6 +641,11 @@
 
     const fromYear = currentYear;
     const targetYear = milestone?.year ?? endYear;
+    // The two 1911 cards share a stem: switch cards without collapsing it.
+    if (fromYear === targetYear) {
+      finishAtMilestone(index);
+      return;
+    }
     const duration = Math.min(
       maximumTimelineAdvanceDurationMs,
       Math.max(
@@ -622,11 +672,7 @@
       currentYear = targetYear;
       timelineAdvanceFrameId = null;
       isAdvancingTimeline = false;
-      if (milestone) {
-        finishAtMilestone(index);
-      } else {
-        activeMilestoneIndex = milestones.length;
-      }
+      finishAtMilestone(index);
     };
 
     timelineAdvanceFrameId = requestAnimationFrame(step);
@@ -634,6 +680,22 @@
 
   const handleNextMilestone = () => {
     advanceToMilestone(activeMilestoneIndex + 1);
+  };
+
+  const handlePreviousMilestone = () => {
+    advanceToMilestone(activeMilestoneIndex - 1);
+  };
+
+  const handleStepRetry = () => {
+    stepError = "";
+    document.querySelectorAll<HTMLImageElement>(".milestone-card.is-active img").forEach((image) => {
+      image.src = image.currentSrc || image.src;
+    });
+    mapReady = false;
+    mapYear = startYear;
+    mapMilestoneId = null;
+    mapInstanceKey += 1;
+    waitForStep();
   };
 
   const handleLoadingEnter = () => {
@@ -644,24 +706,18 @@
   const handleExplore = () => {
     introVisible = false;
     hasEnteredExperience = true;
+    // Reveal the first card with the intro handoff, without an empty-map interval.
+    currentYear = milestones[0].year;
     advanceToMilestone(0);
-  };
-
-  const handleIntroHome = () => {
-    currentYear = startYear;
-    activeMilestoneIndex = -1;
-    pausedAtYear = null;
-    pausedMilestoneId = null;
-    isAdvancingTimeline = false;
-    if (timelineAdvanceFrameId !== null) {
-      cancelAnimationFrame(timelineAdvanceFrameId);
-      timelineAdvanceFrameId = null;
-    }
   };
 
   const handleMapReady = () => {
     mapWarmupProgress = 1;
     mapReady = true;
+    if (hasEnteredExperience) {
+      mapYear = milestones[activeMilestoneIndex]?.year ?? endYear;
+      mapMilestoneId = milestones[activeMilestoneIndex]?.id ?? null;
+    }
   };
 
   const handleMapWarmupProgress = (progress: number) => {
@@ -669,7 +725,10 @@
   };
 
   const handleMapLoadError = () => {
-    if (!mapReady) {
+    if (hasEnteredExperience) {
+      isStepReady = false;
+      stepError = "The map could not load. Check your connection and retry.";
+    } else {
       loadError = "The map could not be loaded. Check your connection and try again.";
     }
   };
@@ -822,8 +881,9 @@
     };
     waitForFonts();
 
-          // Trigger path shrink for the milestone we're leaving — works
     return () => {
+      stepCheckVersion += 1;
+      if (stepCheckFrameId !== null) cancelAnimationFrame(stepCheckFrameId);
       if (timelineAdvanceFrameId !== null) {
         cancelAnimationFrame(timelineAdvanceFrameId);
       }
@@ -852,7 +912,8 @@
   -->
   {#key mapInstanceKey}
     <BackgroundMap
-      {currentYear}
+      bind:this={backgroundMap}
+      currentYear={mapYear}
       {garrettJourneyData}
       {barryJourneyData}
       {riotData}
@@ -867,10 +928,10 @@
       {edinburghRoutes}
       {edinburghSevenData}
       {internationalMedics1926Data}
-      showWomenDoctorBirthplaces={pausedMilestoneId ===
+      showWomenDoctorBirthplaces={mapMilestoneId ===
         "school-and-college-students"}
-      showWomenDoctorCareerLocations={pausedMilestoneId === "career-locations"}
-      showInternationalMedics1926={pausedMilestoneId ===
+      showWomenDoctorCareerLocations={mapMilestoneId === "career-locations"}
+      showInternationalMedics1926={mapMilestoneId ===
         "international-female-medics"}
       onReady={handleMapReady}
       onLoadError={handleMapLoadError}
@@ -882,32 +943,34 @@
     src={publicUrl("img/efi_logo_white.svg")}
     alt="Edinburgh Futures Institute"
   />
-  <h1 class="page-title">Women's Medical Education in Edinburgh</h1>
-  <!-- {#if mapCredit || imageCredit}
-    <aside class="map-image-credits" aria-label="Map and image credits">
-      {#if mapCredit}
-        <em>Map Credit: {mapCredit}</em>
+  {#if hasEnteredExperience}
+    <nav class="step-navigation" aria-label="Milestone navigation">
+      {#if stepError}
+        <div class="step-error" role="alert">
+          <p>{stepError}</p>
+          <button class="retry-button" type="button" disabled={isAdvancingTimeline} on:click={handleStepRetry}>Retry</button>
+        </div>
       {/if}
-      {#if imageCredit}
-        <em>Image Credit: {imageCredit}</em>
-      {/if}
-    </aside>
-  {/if} -->
-  {#if
-    hasEnteredExperience &&
-    !isAdvancingTimeline &&
-    activeMilestoneIndex >= 0 &&
-    activeMilestoneIndex < milestones.length
-  }
-    <button
-      class="resume-button"
-      type="button"
-      on:click={handleNextMilestone}
-    >
-      Next
-    </button>
+      <button bind:this={backButton} class="milestone-arrow milestone-arrow--back" type="button"
+        aria-label="Previous milestone"
+        style:visibility={!isStepReady || activeMilestoneIndex <= 0 ? "hidden" : "visible"}
+        disabled={!isStepReady || activeMilestoneIndex <= 0} on:click={handlePreviousMilestone}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="m 15 5 -7 7 7 7" />
+        </svg>
+      </button>
+      <button bind:this={nextButton} class="milestone-arrow milestone-arrow--next" type="button"
+        aria-label="Next milestone"
+        style:visibility={!isStepReady || activeMilestoneIndex >= milestones.length ? "hidden" : "visible"}
+        disabled={!isStepReady || activeMilestoneIndex >= milestones.length} on:click={handleNextMilestone}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="m 9 5 7 7 -7 7" />
+        </svg>
+      </button>
+    </nav>
   {/if}
   <MainTimeline
+    bind:this={mainTimeline}
     {width}
     {height}
     {currentYear}
@@ -1251,7 +1314,7 @@
     onRetry={handleRetry}
   />
 {:else if introVisible}
-  <AppIntro onExplore={handleExplore} onHome={handleIntroHome} />
+  <AppIntro onExplore={handleExplore} />
 {/if}
 
 <style>
@@ -1275,26 +1338,6 @@
     opacity: 0;
   }
 
-  .page-title {
-    background-color: rgba(0, 0, 0, 0.5);
-    position: absolute;
-    top: 0px;
-    left: 50%;
-    z-index: 3;
-    width: max-content;
-    max-width: calc(100vw - 160px);
-    margin: 0;
-    color: #fff;
-    font-size: clamp(16px, 2vw, 22px);
-    font-weight: 400;
-    line-height: 1.2;
-    text-align: center;
-    transform: translateX(-50%);
-    pointer-events: none;
-    border-radius: 0 0 5px 5px;
-    padding: 5px;
-  }
-
   .timeline-year-heading {
     position: absolute;
     left: 50%;
@@ -1306,7 +1349,7 @@
     padding: 5px;
     border-radius: 5px;
     background-color: rgba(0, 0, 0, 0.7);
-    color: rgb(150, 150, 150);
+    color: white;
     font-size: 12px;
     font-weight: 400;
     font-style: italic;
@@ -1388,7 +1431,7 @@
     /* margin: 10px 10px 5px; */
     color: #fff;
     font-size: 18px;
-    font-weight: 400;
+    font-weight: 700;
     line-height: 1.1;
     text-align: center;
   }
@@ -1626,11 +1669,69 @@
     font-weight: 400;
   }
 
-  .resume-button {
-    position: absolute;
-    top: 5px;
-    right: 110px;
+  .step-navigation {
+    position: fixed;
+    inset: 0;
     z-index: 10;
+    pointer-events: none;
+  }
+
+  .milestone-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    padding: 0.75rem;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(8, 8, 8, 0.8);
+    color: #fff;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .milestone-arrow--back {
+    left: max(0.25rem, env(safe-area-inset-left));
+  }
+
+  .milestone-arrow--next {
+    right: max(0.25rem, env(safe-area-inset-right));
+  }
+
+  .milestone-arrow svg {
+    width: 2rem;
+    height: 2rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .step-error {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100% - 2rem);
+    padding: 0.75rem 1rem;
+    border-radius: 3px;
+    background: #141414;
+    color: #fff;
+    text-align: center;
+    pointer-events: auto;
+  }
+
+  .step-error p {
+    margin: 0 0 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .retry-button {
     padding: 0.5rem 0.75rem;
     border: 1px solid rgba(255, 255, 255, 0.4);
     background: rgba(20, 20, 20, 0.75);
@@ -1639,4 +1740,11 @@
     cursor: pointer;
     border-radius: 3px;
   }
+
+  .milestone-arrow:focus-visible,
+  .retry-button:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 3px;
+  }
+
 </style>

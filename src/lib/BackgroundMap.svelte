@@ -47,6 +47,8 @@
   let mapContainer: HTMLDivElement;
   let styleReady = false;
   let isDestroyed = false;
+  let hasWarmedStoryViews = false;
+  let mapIsIdle = false;
   const pathAnimationFrames = new Map<string, number>();
   let hasAnimatedBarryLine = false;
   let hasAnimatedGarrettLine = false;
@@ -61,7 +63,6 @@
   let hasDrawnWomenDoctorBirthplaces = false;
   let hasDrawnWomenDoctorCareerLocations = false;
   let hasDrawnWomenDoctorsWarLocations = false;
-  let hasFocusedWomenDoctorsMilestone = false;
   let hasCompletedWomenDoctors1911Focus = false;
   let hasFocusedOfficialMedicsMilestone = false;
   let womenDoctors1911ConnectionOverlay: SVGSVGElement | null = null;
@@ -346,7 +347,9 @@
     lineLayerId,
     lineColor,
   }: JourneyLineConfig) => {
-    if (!map || !styleReady || !map.isStyleLoaded()) return false;
+    // Source/tile updates can temporarily make isStyleLoaded() false after
+    // the style has loaded. They must not silently skip a milestone's route.
+    if (!map || !styleReady) return false;
 
     const fullCoords = getLineCoordinates(journeyData);
     if (!fullCoords || fullCoords.length < 2) return false;
@@ -398,7 +401,15 @@
 
     const step = () => {
       const totalFrames = (fullCoords.length - 1) * framesPerSegment;
-      if (frame >= totalFrames) return;
+      if (frame >= totalFrames) {
+        source.setData({
+          type: "Feature",
+          properties: {},
+          geometry: { type: "LineString", coordinates: fullCoords },
+        });
+        pathAnimationFrames.delete(lineLayerId);
+        return;
+      }
 
       const segmentIndex = Math.floor(frame / framesPerSegment);
       const t = (frame % framesPerSegment) / framesPerSegment;
@@ -596,7 +607,7 @@
   }
 
   function handleWomenDoctors1911MapFocusEnd() {
-    if (showWomenDoctorBirthplaces && hasFocusedWomenDoctorsMilestone) {
+    if (showWomenDoctorBirthplaces) {
       hasCompletedWomenDoctors1911Focus = true;
     }
   }
@@ -1776,6 +1787,7 @@
     });
     map.flyTo({
       center: [-1.1883, 53.55],
+      zoom: 6.2,
       duration: 1000,
       essential: true,
     });
@@ -1800,6 +1812,11 @@
     drawTimelineMarkerLayers(currentYear);
   }
 
+  // Restore the opening view when returning from the later Edinburgh maps.
+  $: if (map && styleReady && hasWarmedStoryViews && currentYear < oldMapOverlayStartYear) {
+    map.flyTo({ center: [-3.22, 55.95], zoom: 12, duration: 1000 });
+  }
+
   //// 1682
   // This is an intentional map-only pause: there is no corresponding milestone.
   $: if (
@@ -1811,19 +1828,13 @@
       !mapOverlay1682.hasLayer())
   ) {
     mapOverlay1682.show();
-    // map.flyTo({
-    //   center: [-3.192, 55.948],
-    //   zoom: 12,
-    //   duration: 1000,
-    //   essential: true,
-    // });
   }
 
   // Fade the map away gradually once the timeline resumes.
   $: if (
     map &&
     styleReady &&
-    currentYear > mapOverlay1682Year &&
+    currentYear !== mapOverlay1682Year &&
     mapOverlay1682.isPresent()
   ) {
     mapOverlay1682.fadeOut();
@@ -1853,7 +1864,7 @@
   $: if (
     map &&
     styleReady &&
-    currentYear > oldMapOverlayEndYear &&
+    (currentYear < oldMapOverlayStartYear || currentYear > oldMapOverlayEndYear) &&
     oldMapOverlay.isPresent()
   ) {
     oldMapOverlay.fadeOut();
@@ -1872,7 +1883,7 @@
   }
 
   // Allow Barry's journey to replay.
-  $: if (map && currentYear < barryJourneyYear) {
+  $: if (map && currentYear !== barryJourneyYear) {
     hasAnimatedBarryLine = false;
   }
 
@@ -1880,7 +1891,7 @@
   $: if (
     map &&
     styleReady &&
-    currentYear > barryJourneyYear &&
+    currentYear !== barryJourneyYear &&
     (map.getLayer(barryLineLayerId) || map.getSource(barrySourceId))
   ) {
     cancelPathAnimation(barryLineLayerId);
@@ -1892,7 +1903,7 @@
   $: if (
     map &&
     styleReady &&
-    currentYear >= garrettJourneyYear &&
+    currentYear === garrettJourneyYear &&
     garrettJourneyData &&
     !hasAnimatedGarrettLine
   ) {
@@ -1900,7 +1911,7 @@
   }
 
   // Allow Garrett's journey to replay.
-  $: if (map && currentYear < garrettJourneyYear) {
+  $: if (map && currentYear !== garrettJourneyYear) {
     hasAnimatedGarrettLine = false;
   }
 
@@ -1908,7 +1919,7 @@
   $: if (
     map &&
     styleReady &&
-    currentYear > garrettJourneyYear &&
+    currentYear !== garrettJourneyYear &&
     (map.getLayer(garrettLineLayerId) || map.getSource(garrettSourceId))
   ) {
     cancelPathAnimation(garrettLineLayerId);
@@ -1937,7 +1948,7 @@
   $: if (
     map &&
     styleReady &&
-    currentYear > firstClassesMapOverlayYear &&
+    currentYear !== firstClassesMapOverlayYear &&
     firstClassesMapOverlay.isPresent()
   ) {
     firstClassesMapOverlay.fadeOut();
@@ -1984,7 +1995,7 @@
   }
 
   // Clear the first-classes layers afterward.
-  $: if (map && styleReady && currentYear > firstClassesYear) {
+  $: if (map && styleReady && currentYear !== firstClassesYear) {
     cancelPathAnimation(firstClassesPathsLayerId);
     hasAnimatedFirstClassesPaths = false;
     removeLayerAndSource(firstClassesPathsSourceId, firstClassesPathsLayerId);
@@ -2090,7 +2101,7 @@
   $: if (
     map &&
     styleReady &&
-    currentYear > physiologyMapOverlayEndYear &&
+    (currentYear < physiologyMapOverlayStartYear || currentYear > physiologyMapOverlayEndYear) &&
     physiologyMapOverlay.isPresent()
   ) {
     physiologyMapOverlay.fadeOut();
@@ -2138,7 +2149,7 @@
   }
 
   // Clear the physiology layers afterward.
-  $: if (map && styleReady && currentYear > physiologyYear) {
+  $: if (map && styleReady && currentYear !== physiologyYear) {
     cancelPathAnimation(physiologyPathsLayerId);
     hasAnimatedPhysiologyPaths = false;
     removeLayerAndSource(physiologyPathsSourceId, physiologyPathsLayerId);
@@ -2150,12 +2161,17 @@
   $: if (
     map &&
     styleReady &&
-    currentYear === mapOverlay1886Year &&
+    currentYear >= mapOverlay1886Year &&
+    currentYear <= mapOverlay1886EndYear &&
     (!mapOverlay1886.isShown() ||
       mapOverlay1886.isFading() ||
       !mapOverlay1886.hasLayer())
   ) {
     mapOverlay1886.show();
+  }
+
+  $: if (map && styleReady &&
+    (currentYear === schoolOfMedicineForWomenYear || currentYear === collegeOfMedicineForWomenYear)) {
     map.flyTo({
       center: [-3.182, 55.947],
       zoom: 15,
@@ -2185,7 +2201,7 @@
   $: if (
     map &&
     styleReady &&
-    currentYear > mapOverlay1886EndYear &&
+    (currentYear < mapOverlay1886Year || currentYear > mapOverlay1886EndYear) &&
     mapOverlay1886.isPresent()
   ) {
     mapOverlay1886.fadeOut();
@@ -2213,8 +2229,8 @@
   // Zoom out to the global overview.
   $: if (
     map &&
-    showWomenDoctorBirthplaces &&
-    !hasFocusedWomenDoctorsMilestone
+    styleReady &&
+    (showWomenDoctorBirthplaces || showWomenDoctorCareerLocations)
   ) {
     hasCompletedWomenDoctors1911Focus = false;
     map.flyTo({
@@ -2223,7 +2239,6 @@
       duration: 2000,
       essential: true,
     });
-    hasFocusedWomenDoctorsMilestone = true;
   }
 
   // // Animate the Suez route.
@@ -2428,6 +2443,13 @@
       map.once("idle", resolve);
     });
 
+  // Mapbox readiness alone does not include our route RAFs or overlay fades.
+  export const isSettled = () =>
+    !isDestroyed && styleReady && mapIsIdle && map.loaded() && map.areTilesLoaded() &&
+    !map.isMoving() && pathAnimationFrames.size === 0 &&
+    ![mapOverlay1682, oldMapOverlay, firstClassesMapOverlay,
+      physiologyMapOverlay, mapOverlay1886].some((overlay) => overlay.isFading());
+
   const warmStoryCameraViews = async () => {
     for (const [index, view] of storyCameraViews.entries()) {
       if (isDestroyed) return false;
@@ -2469,16 +2491,28 @@
       projection: "naturalEarth",
     });
 
+    // `idle` also waits for Mapbox's own tile fades and rendering to finish.
+    map.on("renderstart", () => { mapIsIdle = false; });
+    map.on("dataloading", () => { mapIsIdle = false; });
+    map.on("movestart", () => { mapIsIdle = false; });
+    map.on("idle", () => { mapIsIdle = true; });
+
     map.on("error", (event) => {
       console.error("Background map error", event.error);
-      if (!styleReady) onLoadError(event.error);
+      // Raster tiles outside a historical map's coverage can be empty (404).
+      if (!styleReady || (event.error as Error & { status?: number }).status !== 404) {
+        onLoadError(event.error);
+      }
     });
 
     map.on("load", async () => {
       styleReady = true;
       try {
         const completed = await warmStoryCameraViews();
-        if (completed && !isDestroyed) onReady();
+        if (completed && !isDestroyed) {
+          hasWarmedStoryViews = true;
+          onReady();
+        }
       } catch (error: unknown) {
         console.error("Background map warm-up failed", error);
         if (!isDestroyed) onLoadError(error);

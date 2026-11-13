@@ -29,15 +29,12 @@
   let labelWidth = 0;
   $: labelBackgroundWidth = Math.ceil(labelWidth) + labelPaddingX * 2;
 
-  const pathLengthPx = tweened(0, {
+  // The stem tip and label share one tween so crowded labels cannot snap
+  // sideways independently when an active card collapses.
+  const stemTip = tweened({ x, length: 0 }, {
     duration: 500,
     easing: cubicOut,
   });
-  const labelTextAnchorXPx = tweened(0, {
-    duration: 500,
-    easing: cubicOut,
-  });
-  let hasInitialLabelTextAnchor = false;
   $: startY = height - 30;
   $: middleY = height - activeMilestoneStemTipBottomOffset;
   $: fullLength = Math.max(0, startY - middleY);
@@ -48,26 +45,27 @@
     ? (activePathLength ?? fullLength)
     : inactivePathLength;
 
-  $: pathLengthPx.set(targetPathLength);
+  // Animate the first target too: a newly reached milestone grows upward
+  // from zero length at its year instead of appearing at full height.
+  $: stemTip.set({
+    x: active ? x : (labelX ?? x),
+    length: targetPathLength,
+  });
 
-  $: endY = startY - $pathLengthPx;
-  $: targetLabelTextAnchorX = labelX ?? x;
-  $: if (!hasInitialLabelTextAnchor) {
-    labelTextAnchorXPx.set(targetLabelTextAnchorX, { duration: 0 });
-    hasInitialLabelTextAnchor = true;
-  } else {
-    labelTextAnchorXPx.set(targetLabelTextAnchorX);
-  }
-  $: labelTextAnchorX = $labelTextAnchorXPx;
+  export const isSettled = () =>
+    $stemTip.x === (active ? x : (labelX ?? x)) &&
+    $stemTip.length === targetPathLength;
+
+  $: endY = startY - $stemTip.length;
+  $: labelTextAnchorX = $stemTip.x;
   $: labelRotationX = labelTextAnchorX + labelBackgroundCenterOffsetY;
   $: bendSegmentLength = Math.min(6, Math.max(0, (startY - endY) / 3));
   $: bendStartY = startY - bendSegmentLength;
   $: bendEndY = endY + bendSegmentLength;
   $: bendControlOffset = Math.min(4, bendSegmentLength);
-  $: pathD =
-    active || labelTextAnchorX === x
-      ? `M ${x} ${startY} L ${x} ${endY}`
-      : `M ${x} ${startY} L ${x} ${bendStartY} C ${x} ${bendStartY - bendControlOffset}, ${labelTextAnchorX} ${bendEndY + bendControlOffset}, ${labelTextAnchorX} ${bendEndY} L ${labelTextAnchorX} ${endY}`;
+  // This same curve becomes straight when the tip is above its year anchor.
+  // Keeping one geometry avoids an abrupt path switch on deactivation.
+  $: pathD = `M ${x} ${startY} L ${x} ${bendStartY} C ${x} ${bendStartY - bendControlOffset}, ${labelTextAnchorX} ${bendEndY + bendControlOffset}, ${labelTextAnchorX} ${bendEndY} L ${labelTextAnchorX} ${endY}`;
 
   async function updateLabelWidth() {
     await tick();

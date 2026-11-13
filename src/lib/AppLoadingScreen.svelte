@@ -14,11 +14,11 @@
     <p class="eyebrow">Women Medics</p>
     <h1 id="loading-title">
       {#if error}
-        We could not prepare the experience
+        error
       {:else if ready}
-        Ready to begin
+        ready
       {:else}
-        Preparing the experience
+        loading
       {/if}
     </h1>
 
@@ -28,7 +28,8 @@
         Try again
       </button>
     {:else}
-      <p class="message" role="status" aria-live="polite">{status}</p>
+      <p class="sr-status" role="status" aria-live="polite">{status}</p>
+      <!-- <p class="message message--placeholder" aria-hidden="true">&nbsp;</p> -->
       <div
         class="progress-track"
         role="progressbar"
@@ -41,11 +42,16 @@
         <span class="progress-fill" style:width={`${boundedProgress}%`}></span>
       </div>
 
-      {#if ready}
-        <button class="action-button" type="button" on:click={onEnter}>
-          Enter
-        </button>
-      {/if}
+      <button
+        class="action-button"
+        class:action-button--hidden={!ready}
+        type="button"
+        aria-hidden={!ready}
+        tabindex={ready ? 0 : -1}
+        on:click={onEnter}
+      >
+        Enter
+      </button>
     {/if}
   </div>
 </section>
@@ -58,8 +64,8 @@
     display: grid;
     place-items: center;
     padding: clamp(1.25rem, 5vw, 4rem);
-    background: #f5f0e6;
-    color: #151c24;
+    background: #080808;
+    color: #fff;
   }
 
   .loading-content {
@@ -67,11 +73,10 @@
   }
 
   .eyebrow {
-    margin: 0 0 0.75rem;
-    color: #495563;
+    margin: 0 0 0.1rem;
+    color: #fff;
     font-size: 0.75rem;
     font-weight: 700;
-    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
 
@@ -80,18 +85,34 @@
     margin: 0;
     font-size: clamp(2.25rem, 9vw, 5.5rem);
     font-weight: 650;
-    letter-spacing: -0.05em;
     line-height: 0.9;
   }
 
   .message {
     min-height: 1.5em;
     margin: 1.5rem 0 0.75rem;
-    color: #151c24;
+    color: #fff;
     font-size: clamp(1rem, 2.75vw, 1.125rem);
     font-weight: 700;
-    letter-spacing: -0.05em;
     line-height: 1.45;
+  }
+
+  .message--placeholder {
+    min-height: 0;
+    margin: 0.75rem 0;
+    user-select: none;
+  }
+
+  .sr-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .progress-track {
@@ -99,7 +120,7 @@
     height: 0.35rem;
     overflow: hidden;
     border-radius: 999px;
-    background: #d4d0c9;
+    background: #303b46;
   }
 
   .progress-fill {
@@ -127,8 +148,12 @@
     filter: brightness(0.9);
   }
 
+  .action-button--hidden {
+    visibility: hidden;
+  }
+
   .action-button:focus-visible {
-    outline: 3px solid #151c24;
+    outline: 3px solid #fff;
     outline-offset: 3px;
   }
 
