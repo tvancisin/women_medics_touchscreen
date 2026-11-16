@@ -33,6 +33,7 @@
   export let menMedicsData: WomenMedicsDatum[] = [];
   export let yearToX: (year: number) => number;
   export let timelineStretchProgress = 0;
+  export let womenMedicsMarkerY = 0;
 
   const tickLength = 5;
   const inactiveMilestoneLabelLeftExtent = 8;
@@ -44,22 +45,26 @@
   const womenMedicalEducationPeriodStartYear = 1886;
   const womenMedicalEducationPeriodEndYear = 1911;
   const womenMedicalEducationPeriodHeight = 70;
-  const womenMedicalEducationPeriodTickYears = [1888, 1893, 1898, 1903, 1908];
-  const womenMedicalEducationPeriodMinorTickYears = Array.from(
+  // Every other year gives 12 evenly spaced interior ticks instead of 24.
+  const womenMedicalEducationPeriodTickYears = Array.from(
     {
-      length:
-        womenMedicalEducationPeriodEndYear -
-        womenMedicalEducationPeriodStartYear -
-        1,
+      length: Math.floor(
+        (womenMedicalEducationPeriodEndYear -
+          womenMedicalEducationPeriodStartYear -
+          1) /
+          2,
+      ),
     },
-    (_, index) => womenMedicalEducationPeriodStartYear + index + 1,
-  ).filter((year) => !womenMedicalEducationPeriodTickYears.includes(year));
+    (_, index) => womenMedicalEducationPeriodStartYear + (index + 1) * 2,
+  );
   const mutedInactiveMilestoneYears = new Set([1886, 1889, 1911, 1915]);
   let expandedMilestonePathLength = 0;
   let inactiveMilestoneLabelXs = new Map<string, number>();
   let milestoneComponents: Record<string, Milestone | null> = {};
   export const isSettled = () =>
-    Object.values(milestoneComponents).every((component) => !component || component.isSettled());
+    Object.values(milestoneComponents).every(
+      (component) => !component || component.isSettled(),
+    );
   const buildTimelineTickValues = (maxYear: number) => {
     const values = [startYear];
     for (let year = 1600; year <= maxYear; year += 50) values.push(year);
@@ -199,38 +204,70 @@
       <rect
         class="women-medical-education-period"
         x={yearToX(womenMedicalEducationPeriodStartYear)}
-        y={height - womenMedicalEducationPeriodHeight + 8}
+        y={height - womenMedicalEducationPeriodHeight + 40}
         width={yearToX(womenMedicalEducationPeriodEndYear) -
           yearToX(womenMedicalEducationPeriodStartYear)}
         height={womenMedicalEducationPeriodHeight}
         aria-label="Women's medical education period, 1886 to 1911"
       ></rect>
-      <line
+      <!-- <line
         class="women-medical-education-period-edge"
         x1={yearToX(womenMedicalEducationPeriodStartYear)}
-        y1={height - womenMedicalEducationPeriodHeight + 8}
+        y1={timelineY}
         x2={yearToX(womenMedicalEducationPeriodStartYear)}
-        y2={height - 2}
+        y2={height}
         aria-hidden="true"
       ></line>
       <line
         class="women-medical-education-period-edge"
         x1={yearToX(womenMedicalEducationPeriodEndYear)}
-        y1={height - womenMedicalEducationPeriodHeight + 8}
+        y1={timelineY}
         x2={yearToX(womenMedicalEducationPeriodEndYear)}
-        y2={height - 2}
+        y2={height}
         aria-hidden="true"
-      ></line>
+      ></line> -->
+      <text
+        class="women-medical-education-period-label"
+        x={yearToX(womenMedicalEducationPeriodStartYear) - 14}
+        y={timelineY + tickLength + 16}
+        text-anchor="end">{womenMedicalEducationPeriodStartYear}</text
+      >
+      <path
+        class="women-medical-education-period-arrow"
+        d="M -9 -4 L -2 0 L -9 4 Z"
+        transform={`translate(${yearToX(womenMedicalEducationPeriodStartYear)}, ${timelineY + tickLength + 12})`}
+        aria-hidden="true"
+      />
+      <text
+        class="women-medical-education-period-label"
+        x={yearToX(womenMedicalEducationPeriodEndYear) + 14}
+        y={timelineY + tickLength + 16}
+        text-anchor="start">{womenMedicalEducationPeriodEndYear}</text
+      >
+      <path
+        class="women-medical-education-period-arrow"
+        d="M 9 -4 L 2 0 L 9 4 Z"
+        transform={`translate(${yearToX(womenMedicalEducationPeriodEndYear)}, ${timelineY + tickLength + 12})`}
+        aria-hidden="true"
+      />
+      <text
+        class="women-medical-education-period-label"
+        x={(yearToX(womenMedicalEducationPeriodStartYear) +
+          yearToX(womenMedicalEducationPeriodEndYear)) /
+          2}
+        y={timelineY + tickLength + 16}
+        text-anchor="middle">Non-University Medical Education</text
+      >
     {/if}
 
     <g class="timeline-underlay" aria-hidden="true">
-      <!-- <line
+      <line
         class="domain"
         x1={axisStart}
         y1={timelineY}
         x2={axisRight}
         y2={timelineY}
-      ></line> -->
+      ></line>
 
       {#each fullTickValues as year}
         {#if !(timelineStretchProgress > 0 && year === 1900)}
@@ -254,9 +291,6 @@
       {/each}
     </g>
 
-    {#if isCurrentYearInTimelineDomain}
-      <circle cx={currentYearX} cy={timelineY} r="5" fill="#fff"></circle>
-    {/if}
 
     {#if currentYear >= 1583}
       <line
@@ -288,22 +322,12 @@
 
     {#if timelineStretchProgress > 0}
       <g class="timeline-stretch-ticks" opacity={timelineStretchProgress}>
-        {#each womenMedicalEducationPeriodMinorTickYears as year}
-          <g
-            class="minor-tick"
-            transform={`translate(${yearToX(year)}, ${timelineY})`}
-          >
-            <line x1="0" y1="0" x2="0" y2={tickLength}></line>
-          </g>
-        {/each}
         {#each womenMedicalEducationPeriodTickYears as year}
           <g
             class="tick"
-            class:timeline-stretch-tick--reached={currentYear >= year}
             transform={`translate(${yearToX(year)}, ${timelineY})`}
           >
             <line x1="0" y1="0" x2="0" y2={tickLength}></line>
-            <text x="0" y={tickLength + 16} text-anchor="middle">{year}</text>
           </g>
         {/each}
       </g>
@@ -318,6 +342,17 @@
       {yearToX}
     /> -->
 
+    {#if isCurrentYearInTimelineDomain}
+      <circle
+        cx={currentYearX}
+        cy={timelineY}
+        r="7"
+        fill="#fff"
+        stroke="black"
+        stroke-width="2"
+      ></circle>
+    {/if}
+
     <DoctorsAreaChart
       {womenDoctorsData}
       {currentYear}
@@ -327,6 +362,7 @@
     />
 
     <UniAreaChart
+      bind:markerY={womenMedicsMarkerY}
       {width}
       {currentYear}
       domainStartYear={timelineDomainStart}
@@ -447,7 +483,7 @@
   }
 
   .women-medical-education-period {
-    fill: rgba(60, 60, 60, 0.795);
+    fill: rgb(111, 99, 99);
   }
 
   .women-medical-education-period-edge {
@@ -469,14 +505,14 @@
     font-weight: 500;
   }
 
-  .timeline-stretch-ticks .tick text {
-    fill: rgba(180, 180, 180, 0.9);
+  .women-medical-education-period-label {
+    fill: rgba(255, 255, 255, 0.9);
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
   }
 
-  .timeline-stretch-ticks .tick.timeline-stretch-tick--reached text {
-    fill: #fff;
+  .women-medical-education-period-arrow {
+    fill: rgba(180, 180, 180, 0.9);
   }
 
   .milestone-comparison line {

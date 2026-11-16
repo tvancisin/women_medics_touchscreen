@@ -133,7 +133,7 @@
 
   .doctor-area-line {
     fill: none;
-    stroke: rgba(180, 180, 180, 0.95);
+    stroke: rgba(254, 254, 254, 0.95);
     stroke-width: 1.5;
   }
 

@@ -11,6 +11,8 @@
   export let yearToX: (year: number) => number;
   export let womenMedicsData: WomenMedicsDatum[] = [];
   export let menMedicsData: WomenMedicsDatum[] = [];
+  // Share the actual chart position with the HTML note anchored above it.
+  export let markerY = 0;
 
   const chartPaddingBottom = 0;
   const chartPaddingTop = 50;

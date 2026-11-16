@@ -83,7 +83,7 @@
   h1 {
     max-width: 12ch;
     margin: 0;
-    font-size: clamp(2.25rem, 9vw, 5.5rem);
+    font-size: clamp(2.25rem, 9vw, 2rem);
     font-weight: 650;
     line-height: 0.9;
   }
@@ -95,12 +95,6 @@
     font-size: clamp(1rem, 2.75vw, 1.125rem);
     font-weight: 700;
     line-height: 1.45;
-  }
-
-  .message--placeholder {
-    min-height: 0;
-    margin: 0.75rem 0;
-    user-select: none;
   }
 
   .sr-status {
@@ -133,8 +127,8 @@
 
   .action-button {
     min-height: 2.75rem;
-    margin-top: 1.5rem;
-    padding: 0.65rem 1.1rem;
+    margin-top: 1rem;
+    padding: 0.2rem 0.9rem;
     border: 0;
     border-radius: 0.2rem;
     background: #495563;

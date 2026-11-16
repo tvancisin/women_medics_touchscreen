@@ -12,6 +12,10 @@
   const baseUrl = import.meta.env.BASE_URL;
   const publicUrl = (path: string) => `${baseUrl}${path}`;
 
+  const chartNote1920 = {
+    text: "We know the numbers of women medical students because of Dr John Martin and his research into the student numbers at the University between 1836 and 2019.",
+  };
+
   const startYear = 1582;
   const universityEstablishedYear = 1582;
   const endYear = 2026;
@@ -53,7 +57,7 @@
 
   // Anchor cards differently depending on whether the milestone is left or right of center.
   const card_left = [1726, 1809];
-  const card_middle = [1911];
+  const card_middle = [1911, 1916];
   const clampedLeft = (x: number, year: number, timelineYear = year) => {
     // return x < width / 2 ? x + 10 : x - milestoneCardWidth - 10;
     if (card_middle.includes(timelineYear)) {
@@ -165,6 +169,13 @@
       label: "Equal Medical Education 1916",
     },
     {
+      id: "pause-1920",
+      year: 1920,
+      contentYear: 1920,
+      label: "",
+      renderOnTimeline: false,
+    },
+    {
       id: "international-female-medics",
       year: 1926,
       contentYear: 1926,
@@ -173,7 +184,7 @@
   ];
 
   const splitMilestoneYears = new Set([
-    1809, 1862, 1867, 1870, 1875, 1886, 1889, 1911,
+    1809, 1862, 1867, 1870, 1875, 1886, 1889, 1911, 1926,
   ]);
   const universityFoundedMapCredit =
     creditsByYear.find((credits) => credits.year === 1583)?.map ?? "";
@@ -193,6 +204,7 @@
 
   let height = 0;
   let width = 0;
+  let womenMedicsMarkerY = 0;
   let garrettJourneyData: unknown = null;
   let barryJourneyData: unknown = null;
   let riotData: unknown = null;
@@ -244,11 +256,11 @@
   $: readinessComplete = [csvDataReady, jsonDataReady, fontsReady, mapReady];
   $: readinessCount = readinessComplete.filter(Boolean).length;
   $: loadingProgress =
-    ((csvDataReady ? 1 : 0) +
+    (((csvDataReady ? 1 : 0) +
       (jsonDataReady ? 1 : 0) +
       (fontsReady ? 1 : 0) +
       mapWarmupProgress) /
-    readinessComplete.length *
+      readinessComplete.length) *
     100;
   $: isReadyToEnter = readinessCount === readinessComplete.length && !loadError;
   $: loadingStatus = isReadyToEnter ? "Ready" : "Loading";
@@ -544,8 +556,11 @@
     return originalX + (stretchedX - originalX) * timelineStretchProgress;
   };
 
-  $: if (isTimelineStretched !==
-    (currentYear >= timelineStretchTriggerYear && currentYear < timelineStretchResetYear)) {
+  $: if (
+    isTimelineStretched !==
+    (currentYear >= timelineStretchTriggerYear &&
+      currentYear < timelineStretchResetYear)
+  ) {
     isTimelineStretched = !isTimelineStretched;
     startTimelineStretch(isTimelineStretched ? 1 : 0);
   }
@@ -565,7 +580,8 @@
 
   $: if (
     enableTimelineSpreading &&
-    (currentYear < timelineZoomTriggerYear || currentYear >= timelineResetTriggerYear) &&
+    (currentYear < timelineZoomTriggerYear ||
+      currentYear >= timelineResetTriggerYear) &&
     hasZoomedTimeline
   ) {
     hasZoomedTimeline = false;
@@ -579,32 +595,52 @@
     await tick();
     try {
       const card = document.querySelector(".milestone-card.is-active");
-      await Promise.all(Array.from(card?.querySelectorAll("img, [style]") ?? []).map(async (element) => {
-        if (element instanceof HTMLImageElement) return element.decode();
-        const url = getComputedStyle(element).backgroundImage.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
-        if (url) {
-          const image = new Image();
-          image.src = url;
-          await image.decode();
-        }
-      }));
+      await Promise.all(
+        Array.from(card?.querySelectorAll("img, [style]") ?? []).map(
+          async (element) => {
+            if (element instanceof HTMLImageElement) return element.decode();
+            const url = getComputedStyle(element).backgroundImage.match(
+              /^url\(["']?(.*?)["']?\)$/,
+            )?.[1];
+            if (url) {
+              const image = new Image();
+              image.src = url;
+              await image.decode();
+            }
+          },
+        ),
+      );
     } catch {
-      if (version === stepCheckVersion) stepError = "A step image could not load. Check your connection and retry.";
+      if (version === stepCheckVersion)
+        stepError =
+          "A step image could not load. Check your connection and retry.";
       return;
     }
 
     const check = () => {
       stepCheckFrameId = null;
       if (version !== stepCheckVersion || stepError) return;
-      if (mapReady && !isAdvancingTimeline && timelineZoomFrameId === null &&
+      if (
+        mapReady &&
+        !isAdvancingTimeline &&
+        timelineZoomFrameId === null &&
         timelineStretchFrameId === null &&
-        $equalMedicalEducationCardBottomOffset === (pausedMilestoneId === "equal-medical-education"
-          ? height / 2 + milestoneCardStemGap : milestoneCardBottomOffset) &&
-        backgroundMap?.isSettled() && mainTimeline?.isSettled()) {
+        $equalMedicalEducationCardBottomOffset ===
+          (pausedMilestoneId === "equal-medical-education"
+            ? height / 2 + milestoneCardStemGap
+            : milestoneCardBottomOffset) &&
+        backgroundMap?.isSettled() &&
+        mainTimeline?.isSettled()
+      ) {
         isStepReady = true;
         tick().then(() => {
           const button = navigationDirection < 0 ? backButton : nextButton;
-          (button?.disabled ? (navigationDirection < 0 ? nextButton : backButton) : button)?.focus({ preventScroll: true });
+          (button?.disabled
+            ? navigationDirection < 0
+              ? nextButton
+              : backButton
+            : button
+          )?.focus({ preventScroll: true });
         });
         return;
       }
@@ -624,8 +660,13 @@
 
   const advanceToMilestone = (index: number) => {
     const milestone = milestones[index];
-    if (index < 0 || index > milestones.length || isAdvancingTimeline ||
-      (hasEnteredExperience && activeMilestoneIndex >= 0 && !isStepReady)) return;
+    if (
+      index < 0 ||
+      index > milestones.length ||
+      isAdvancingTimeline ||
+      (hasEnteredExperience && activeMilestoneIndex >= 0 && !isStepReady)
+    )
+      return;
 
     navigationDirection = index < activeMilestoneIndex ? -1 : 1;
     isStepReady = false;
@@ -688,9 +729,11 @@
 
   const handleStepRetry = () => {
     stepError = "";
-    document.querySelectorAll<HTMLImageElement>(".milestone-card.is-active img").forEach((image) => {
-      image.src = image.currentSrc || image.src;
-    });
+    document
+      .querySelectorAll<HTMLImageElement>(".milestone-card.is-active img")
+      .forEach((image) => {
+        image.src = image.currentSrc || image.src;
+      });
     mapReady = false;
     mapYear = startYear;
     mapMilestoneId = null;
@@ -729,7 +772,8 @@
       isStepReady = false;
       stepError = "The map could not load. Check your connection and retry.";
     } else {
-      loadError = "The map could not be loaded. Check your connection and try again.";
+      loadError =
+        "The map could not be loaded. Check your connection and try again.";
     }
   };
 
@@ -752,18 +796,17 @@
           rawMenMedicsData,
           rawEdinburghSevenData,
           rawInternationalMedics1926Data,
-        ] =
-          (await getCSV([
-            publicUrl("data/women_medics_1914_1966.csv"),
-            publicUrl("data/men_medics_1836_1966.csv"),
-            publicUrl("data/edinburgh_forty.csv"),
-            publicUrl("data/1926_international_medics.csv"),
-          ])) as [
-            Array<{ year?: string; number?: string }>,
-            Array<Record<string, string>>,
-            Array<Record<string, string>>,
-            Array<Record<string, string>>,
-          ];
+        ] = (await getCSV([
+          publicUrl("data/women_medics_1914_1966.csv"),
+          publicUrl("data/men_medics_1836_1966.csv"),
+          publicUrl("data/edinburgh_forty.csv"),
+          publicUrl("data/1926_international_medics.csv"),
+        ])) as [
+          Array<{ year?: string; number?: string }>,
+          Array<Record<string, string>>,
+          Array<Record<string, string>>,
+          Array<Record<string, string>>,
+        ];
 
         womenMedicsData = rawWomenMedicsData
           .map((row: { year?: string; number?: string }) => {
@@ -794,7 +837,8 @@
         // firstClassesData = first_classes;
       } catch (error: unknown) {
         console.error("Failed to load", error);
-        loadError = "The timeline data could not be loaded. Check your connection and try again.";
+        loadError =
+          "The timeline data could not be loaded. Check your connection and try again.";
       }
     };
 
@@ -860,7 +904,8 @@
         jsonDataReady = true;
       } catch (error: unknown) {
         console.error("Failed to load timeline JSON data", error);
-        loadError = "The map data could not be loaded. Check your connection and try again.";
+        loadError =
+          "The map data could not be loaded. Check your connection and try again.";
       }
     };
 
@@ -948,21 +993,41 @@
       {#if stepError}
         <div class="step-error" role="alert">
           <p>{stepError}</p>
-          <button class="retry-button" type="button" disabled={isAdvancingTimeline} on:click={handleStepRetry}>Retry</button>
+          <button
+            class="retry-button"
+            type="button"
+            disabled={isAdvancingTimeline}
+            on:click={handleStepRetry}>Retry</button
+          >
         </div>
       {/if}
-      <button bind:this={backButton} class="milestone-arrow milestone-arrow--back" type="button"
+      <button
+        bind:this={backButton}
+        class="milestone-arrow milestone-arrow--back"
+        type="button"
         aria-label="Previous milestone"
-        style:visibility={!isStepReady || activeMilestoneIndex <= 0 ? "hidden" : "visible"}
-        disabled={!isStepReady || activeMilestoneIndex <= 0} on:click={handlePreviousMilestone}>
+        style:visibility={!isStepReady || activeMilestoneIndex <= 0
+          ? "hidden"
+          : "visible"}
+        disabled={!isStepReady || activeMilestoneIndex <= 0}
+        on:click={handlePreviousMilestone}
+      >
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="m 15 5 -7 7 7 7" />
         </svg>
       </button>
-      <button bind:this={nextButton} class="milestone-arrow milestone-arrow--next" type="button"
+      <button
+        bind:this={nextButton}
+        class="milestone-arrow milestone-arrow--next"
+        type="button"
         aria-label="Next milestone"
-        style:visibility={!isStepReady || activeMilestoneIndex >= milestones.length ? "hidden" : "visible"}
-        disabled={!isStepReady || activeMilestoneIndex >= milestones.length} on:click={handleNextMilestone}>
+        style:visibility={!isStepReady ||
+        activeMilestoneIndex >= milestones.length
+          ? "hidden"
+          : "visible"}
+        disabled={!isStepReady || activeMilestoneIndex >= milestones.length}
+        on:click={handleNextMilestone}
+      >
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="m 9 5 7 7 -7 7" />
         </svg>
@@ -971,6 +1036,7 @@
   {/if}
   <MainTimeline
     bind:this={mainTimeline}
+    bind:womenMedicsMarkerY
     {width}
     {height}
     {currentYear}
@@ -1000,6 +1066,23 @@
     </h2>
   {/if}
 
+  {#if pausedMilestoneId === "pause-1920"}
+    <div
+      class="milestone-card is-active milestone-card--1920"
+      style:left={`${yearToX(1920)}px`}
+      style:bottom={`${height - womenMedicsMarkerY + 10}px`}
+    >
+      <p class="milestone-card-title">{chartNote1920.text}</p>
+      <div class="milestone-map-section">
+        <p class="milestone-map-credit">
+          Martin, John N. T. “Student Numbers at Edinburgh University, 1836–2019.”
+          <cite>University of Edinburgh Journal</cite> 49, no. 4 (Winter 2020):
+          293–302.
+        </p>
+      </div>
+    </div>
+  {/if}
+
   {#each milestones as milestone (milestone.id)}
     {@const year = milestone.contentYear}
     <div
@@ -1009,7 +1092,7 @@
       class:milestone-card--women-doctors-1911={year === 1911}
       class:milestone-card--split={splitMilestoneYears.has(year)}
       class:is-active={pausedMilestoneId === milestone.id}
-      style:display={milestone.id === "map-1682" ? "none" : undefined}
+      style:display={milestone.renderOnTimeline === false ? "none" : undefined}
       style:bottom={`${
         milestone.year === 1916
           ? $equalMedicalEducationCardBottomOffset
@@ -1034,9 +1117,9 @@
         <div class="milestone-card-text-only">
           <div class="milestone-card-title">
             In 1726, when the School of Medicine was established, the population
-            of Edinburgh was roughly 40,000 people. The education took place at
-            the Old College (currently School of Law) as well as at the Old
-            Surgeon's Hall.
+            of Edinburgh was roughly 40,000. The education took place at the Old
+            College (currently School of Law) as well as at the Old Surgeon's
+            Hall.
           </div>
           <div class="milestone-map-section">
             <p class="milestone-map-credit">
@@ -1091,11 +1174,10 @@
           </div>
           <div class="milestone-card-split-half milestone-card-split-text">
             <div class="milestone-card-title">
-              The very first classes women could attend at the University (
-              before the 'Edinburgh Seven') were David Masson's English
-              Literature classes. A supporter of women's suffrage, Masson
-              started teaching women in 1867 at Hopetoun Rooms (67-73 Queen
-              Street).
+              The first classes women could attend at the University ( before
+              the 'Edinburgh Seven') were David Masson's English Literature
+              classes. A supporter of women's suffrage, Masson started teaching
+              women in 1867 at Hopetoun Rooms (67-73 Queen Street).
             </div>
             <div class="milestone-map-section">
               <p class="milestone-map-credit">Map: {firstClassesMapCredit}</p>
@@ -1160,9 +1242,8 @@
             <div class="milestone-card-title">
               After the 'Edinburgh Seven' were refused graduation, there were
               still professors who supported women in their pursuit to study
-              medicine. One of them was John Gray McKendrick, who started
-              teaching physiology to women at Gayfield House (18 East London
-              Street) in 1875.
+              medicine. John Gray McKendrick started teaching physiology to
+              women at Gayfield House (18 East London Street) in 1875.
             </div>
             <div class="milestone-map-section">
               <p class="milestone-map-credit">
@@ -1269,6 +1350,16 @@
             campaigning led the University to admit women to its medical
             classes, but even then, for several years, women were often taught
             separately from men.
+          </div>
+        </div>
+      {:else if year === 1926}
+        <div class="milestone-card-split-layout">
+          <div class="milestone-card-split-half milestone-card-split-image">
+            <img
+              class="milestone-image"
+              src={publicUrl("img/1926_matriculation.jpg")}
+              alt="Open pages from the University of Edinburgh matriculation album, 1926"
+            />
           </div>
         </div>
         <!-- 1919 milestone temporarily disabled.
@@ -1426,6 +1517,21 @@
     width: min(500px, calc(100vw - 32px));
   }
 
+  .milestone-card--1920.is-active {
+    width: 300px;
+    padding: 0.5rem;
+    gap: 0.5rem;
+    transform: translateX(-50%);
+  }
+
+  .milestone-card--1920 .milestone-card-title {
+    margin: 0;
+  }
+
+  .milestone-card--1920 .milestone-map-credit {
+    font-style: normal;
+  }
+
   .milestone-card-heading {
     flex: 0 0 auto;
     /* margin: 10px 10px 5px; */
@@ -1551,6 +1657,11 @@
     flex: 0 0 auto;
     min-height: 0;
     border-radius: 3px;
+  }
+
+  /* Let the 1911 photo fill the card width at its natural aspect ratio. */
+  .milestone-card--women-doctors-1911 .milestone-image {
+    max-height: none;
   }
 
   .career-chart {
@@ -1746,5 +1857,4 @@
     outline: 3px solid #fff;
     outline-offset: 3px;
   }
-
 </style>
