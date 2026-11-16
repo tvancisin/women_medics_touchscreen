@@ -42,6 +42,7 @@
   const milestoneCardWidth = 400;
   const universityFoundedImageAspectRatio = 7272 / 5461;
   const milestoneCardBottomOffset = 65;
+  const chartCardMarkerGap = 10;
   const activeMilestoneStemTipBottomOffset = 60;
   const milestoneCardStemGap =
     milestoneCardBottomOffset - activeMilestoneStemTipBottomOffset;
@@ -179,7 +180,7 @@
       id: "international-female-medics",
       year: 1926,
       contentYear: 1926,
-      label: "International female medics 1926",
+      label: "",
     },
   ];
 
@@ -1050,7 +1051,9 @@
     {axisRight}
     {milestones}
     {pausedMilestoneId}
-    {activeMilestoneStemTipBottomOffset}
+    activeMilestoneStemTipBottomOffset={pausedMilestoneId === "international-female-medics"
+      ? height - womenMedicsMarkerY + chartCardMarkerGap - milestoneCardStemGap
+      : activeMilestoneStemTipBottomOffset}
     {womenDoctorsData}
     {womenMedicsData}
     {menMedicsData}
@@ -1068,16 +1071,16 @@
 
   {#if pausedMilestoneId === "pause-1920"}
     <div
-      class="milestone-card is-active milestone-card--1920"
+      class="milestone-card is-active milestone-card--1920 milestone-card--chart-anchored"
       style:left={`${yearToX(1920)}px`}
-      style:bottom={`${height - womenMedicsMarkerY + 10}px`}
+      style:bottom={`${height - womenMedicsMarkerY + chartCardMarkerGap}px`}
     >
       <p class="milestone-card-title">{chartNote1920.text}</p>
       <div class="milestone-map-section">
         <p class="milestone-map-credit">
-          Martin, John N. T. “Student Numbers at Edinburgh University, 1836–2019.”
-          <cite>University of Edinburgh Journal</cite> 49, no. 4 (Winter 2020):
-          293–302.
+          Martin, John N. T. “Student Numbers at Edinburgh University,
+          1836–2019.”
+          <cite>University of Edinburgh Journal</cite> 49, no. 4 (Winter 2020): 293–302.
         </p>
       </div>
     </div>
@@ -1090,13 +1093,17 @@
       class:milestone-card--university-founded={year === 1583}
       class:milestone-card--edinburgh-forty={year === 1869}
       class:milestone-card--women-doctors-1911={year === 1911}
+      class:milestone-card--narrow={year === 1926}
+      class:milestone-card--chart-anchored={year === 1926}
       class:milestone-card--split={splitMilestoneYears.has(year)}
       class:is-active={pausedMilestoneId === milestone.id}
       style:display={milestone.renderOnTimeline === false ? "none" : undefined}
       style:bottom={`${
-        milestone.year === 1916
-          ? $equalMedicalEducationCardBottomOffset
-          : milestoneCardBottomOffset
+        milestone.year === 1926
+          ? height - womenMedicsMarkerY + chartCardMarkerGap
+          : milestone.year === 1916
+            ? $equalMedicalEducationCardBottomOffset
+            : milestoneCardBottomOffset
       }px`}
       style:left={`${clampedLeft(yearToX(milestone.year), year, milestone.year)}px`}
       style:width={year === 1583 && pausedMilestoneId === milestone.id
@@ -1354,12 +1361,21 @@
         </div>
       {:else if year === 1926}
         <div class="milestone-card-split-layout">
-          <div class="milestone-card-split-half milestone-card-split-image">
+          <!-- <div class="milestone-card-split-half milestone-card-split-image">
             <img
               class="milestone-image"
               src={publicUrl("img/1926_matriculation.jpg")}
               alt="Open pages from the University of Edinburgh matriculation album, 1926"
             />
+          </div> -->
+          <div class="milestone-card-split-half milestone-card-split-text">
+            <div class="milestone-card-title">
+              Tess Rodrigues from the Heritage Collections recently transcribed
+              the 1925-26 Matriculation Roll and transferred the data into a
+              machine-processable form, which enabled us to see a much fuller
+              picture of the student body. The map shows the birth locations of
+              female student medics.
+            </div>
           </div>
         </div>
         <!-- 1919 milestone temporarily disabled.
@@ -1507,6 +1523,10 @@
     justify-content: flex-start;
   }
 
+  .milestone-card--narrow.is-active {
+    width: 300px;
+  }
+
   .milestone-card--edinburgh-forty.is-active {
     width: min(500px, calc(100vw - 32px));
     height: calc(100vh - 65px - 65px);
@@ -1521,6 +1541,9 @@
     width: 300px;
     padding: 0.5rem;
     gap: 0.5rem;
+  }
+
+  .milestone-card--chart-anchored {
     transform: translateX(-50%);
   }
 
