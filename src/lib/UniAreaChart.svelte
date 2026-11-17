@@ -1,5 +1,6 @@
 <script lang="ts">
   import * as d3 from "d3";
+  import { onDestroy } from "svelte";
 
   type WomenMedicsDatum = { year: number; number: number };
 
@@ -11,6 +12,7 @@
   export let yearToX: (year: number) => number;
   export let womenMedicsData: WomenMedicsDatum[] = [];
   export let menMedicsData: WomenMedicsDatum[] = [];
+  export let menComparisonActive = false;
   // Share the actual chart position with the HTML note anchored above it.
   export let markerY = 0;
 
@@ -18,6 +20,47 @@
   const chartPaddingTop = 50;
   const menMissingDataStartYear = 1833;
   const trailingMissingDataEndYear = 1970;
+  const menComparisonStartYear = 1965;
+  const menChartStartYear = 1836;
+  const menChartEndYear = 1966;
+  const menChartYearsPerSecond = 5;
+  let menDrawYear = menChartStartYear;
+  let menAnimationFrameId: number | null = null;
+  let hasStartedMenComparison = false;
+
+  const resetMenComparison = () => {
+    if (menAnimationFrameId !== null) cancelAnimationFrame(menAnimationFrameId);
+    menAnimationFrameId = null;
+    hasStartedMenComparison = false;
+  };
+
+  const startMenComparison = () => {
+    hasStartedMenComparison = true;
+    menDrawYear = menChartStartYear;
+    const startedAt = performance.now();
+    const step = (now: number) => {
+      menDrawYear = Math.min(
+        menChartEndYear,
+        menChartStartYear + ((now - startedAt) / 1_000) * menChartYearsPerSecond,
+      );
+      menAnimationFrameId =
+        menDrawYear < menChartEndYear ? requestAnimationFrame(step) : null;
+    };
+    menAnimationFrameId = requestAnimationFrame(step);
+  };
+
+  $: showMenComparison = currentYear >= menComparisonStartYear;
+  // Like the main timeline, this data sequence has its own animated year.
+  // It runs through the complete men's series while the main year stays 1965.
+  $: if (menComparisonActive && menMedicsData.length && !hasStartedMenComparison) {
+    startMenComparison();
+  } else if (!menComparisonActive && hasStartedMenComparison) {
+    resetMenComparison();
+  }
+  onDestroy(resetMenComparison);
+
+  export const isSettled = () =>
+    !menComparisonActive || !menMedicsData.length || menDrawYear === menChartEndYear;
 
   $: projectionData =
     womenMedicsData.length === 0
@@ -67,6 +110,7 @@
     .sort((a, b) => a.year - b.year);
 
   $: sortedData = [...womenMedicsData].sort((a, b) => a.year - b.year);
+  $: sortedMenData = [...menMedicsData].sort((a, b) => a.year - b.year);
 
   // Both charts use one fixed scale so their values remain directly comparable.
   $: maxY =
@@ -81,9 +125,9 @@
     .domain([0, maxY > 0 ? maxY : 1])
     .range([timelineY - chartPaddingBottom, chartPaddingTop]);
 
-  // Show the comparison scale only once both series are visible at the end
-  // of the timeline. Its horizontal tick lines double as a full-width grid.
-  $: showYAxis = currentYear >= 2026 && maxY > 0;
+  // Show the comparison scale with the men's series. Its horizontal tick
+  // lines double as a full-width grid.
+  $: showYAxis = currentYear >= menComparisonStartYear && maxY > 0;
   // D3 orders ticks from the bottom value to the top value. Remove that
   // final tick so the y-axis does not have a tick at its upper endpoint.
   $: yTickValues = showYAxis
@@ -102,17 +146,29 @@
     .x((d: WomenMedicsDatum) => yearToX(d.year))
     .y((d: WomenMedicsDatum) => yScale(d.number))(visibleData);
 
-  $: visibleMenData =
-    currentYear >= 2026
-      ? menMedicsData
-          .filter(
-            (d) =>
-              d.year <= currentYear &&
-              d.year >= domainStartYear &&
-              d.year <= domainEndYear,
-          )
-          .sort((a, b) => a.year - b.year)
-      : [];
+  $: menCurrentValue = interpolateValueAtYear(sortedMenData, menDrawYear);
+  $: visibleMenData = (() => {
+    if (!showMenComparison) return [];
+    const visible = sortedMenData.filter(
+      (d) =>
+        d.year <= menDrawYear &&
+        d.year >= domainStartYear &&
+        d.year <= domainEndYear,
+    );
+    // Include the moving tip so the area, line and circle stay attached
+    // between recorded years, without changing the underlying data.
+    const previous = visible.at(-1);
+    if (
+      previous &&
+      menDrawYear > previous.year &&
+      menCurrentValue !== null &&
+      menDrawYear >= domainStartYear &&
+      menDrawYear <= domainEndYear
+    ) {
+      visible.push({ year: menDrawYear, number: menCurrentValue });
+    }
+    return visible;
+  })();
 
   // Continue the first observed year-to-year change backwards to signal the
   // period before the men's series begins. This is a visual cue only, not
@@ -142,7 +198,7 @@
     .y((d) => yScale(d.number))(menMissingnessData);
 
   $: showMenMissingness =
-    currentYear >= 2026 && menMissingnessData.length === 2 && menMissingnessPath;
+    currentYear >= menComparisonStartYear && menMissingnessData.length === 2 && menMissingnessPath;
 
   $: womenTrailingMissingnessData = (() => {
     const last = sortedData.at(-1);
@@ -201,7 +257,8 @@
     .y((d) => yScale(d.number))(menTrailingMissingnessData);
 
   $: showMenTrailingMissingness =
-    currentYear >= 2026 &&
+    showMenComparison &&
+    menDrawYear >= (menTrailingMissingnessData[0]?.year ?? Infinity) &&
     menTrailingMissingnessData.length === 2 &&
     menTrailingMissingnessPath;
 
@@ -216,18 +273,21 @@
     .x((d: WomenMedicsDatum) => yearToX(d.year))
     .y((d: WomenMedicsDatum) => yScale(d.number))(visibleMenData);
 
-  const interpolateValueAtYear = (year: number): number | null => {
-    if (sortedData.length === 0) {
+  const interpolateValueAtYear = (
+    data: WomenMedicsDatum[],
+    year: number,
+  ): number | null => {
+    if (data.length === 0) {
       return null;
     }
 
-    if (year <= sortedData[0].year) {
-      return sortedData[0].number;
+    if (year <= data[0].year) {
+      return data[0].number;
     }
 
-    for (let i = 1; i < sortedData.length; i += 1) {
-      const previous = sortedData[i - 1];
-      const next = sortedData[i];
+    for (let i = 1; i < data.length; i += 1) {
+      const previous = data[i - 1];
+      const next = data[i];
 
       if (year <= next.year) {
         const yearSpan = next.year - previous.year;
@@ -240,10 +300,10 @@
       }
     }
 
-    return sortedData[sortedData.length - 1].number;
+    return data[data.length - 1].number;
   };
 
-  $: currentValue = interpolateValueAtYear(currentYear);
+  $: currentValue = interpolateValueAtYear(sortedData, currentYear);
   $: markerX = yearToX(currentYear);
   $: markerY = currentValue === null ? timelineY : yScale(currentValue);
   $: markerLabel =
@@ -379,17 +439,33 @@
   >no data</text>
 {/if}
 
-{#if currentYear >= 2026 && visibleMenData.length > 1 && menAreaPath}
+{#if showMenComparison && visibleMenData.length > 1 && menAreaPath}
   <path d={menAreaPath} class="men-area-shape" />
   {#if menLinePath}
     <path d={menLinePath} class="men-area-top-line" fill="none" />
   {/if}
-  <text class="area-chart-label men-area-chart-label" x={yearToX(1900)} y={yScale(750)}>
-    Men medics
-  </text>
-  <text class="area-chart-label women-area-chart-label" x={yearToX(1950)} y={yScale(100)}>
-    Women medics
-  </text>
+  {#if menDrawYear === menChartEndYear}
+    <text class="area-chart-label men-area-chart-label" x={yearToX(1900)} y={yScale(750)}>
+      Men medics
+    </text>
+    <text class="area-chart-label women-area-chart-label" x={yearToX(1950)} y={yScale(100)}>
+      Women medics
+    </text>
+  {/if}
+{/if}
+
+{#if showMenComparison && menCurrentValue !== null && currentYear <= menChartEndYear && menDrawYear >= domainStartYear && menDrawYear <= domainEndYear}
+  <circle
+    class="line-head men-line-head"
+    cx={yearToX(menDrawYear)}
+    cy={yScale(menCurrentValue)}
+    r="4"
+  />
+  <text
+    class="line-head-label men-line-head-label"
+    x={yearToX(menDrawYear) + 8}
+    y={yScale(menCurrentValue) + 3}
+  >{Math.floor(menDrawYear)} · {Math.round(menCurrentValue)} men medics</text>
 {/if}
 
 <style>

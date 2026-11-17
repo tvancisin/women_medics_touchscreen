@@ -9,6 +9,10 @@
   import BackgroundMap from "./lib/BackgroundMap.svelte";
   import MainTimeline from "./lib/MainTimeline.svelte";
 
+
+  // todo 
+  // the travelling circle jumps up to 1886-1911 numbers and the same for 1916 onwards
+
   const baseUrl = import.meta.env.BASE_URL;
   const publicUrl = (path: string) => `${baseUrl}${path}`;
 
@@ -181,6 +185,13 @@
       year: 1926,
       contentYear: 1926,
       label: "",
+    },
+    {
+      id: "pause-1965",
+      year: 1965,
+      contentYear: 1965,
+      label: "",
+      renderOnTimeline: false,
     },
   ];
 
@@ -1071,7 +1082,7 @@
 
   {#if pausedMilestoneId === "pause-1920"}
     <div
-      class="milestone-card is-active milestone-card--1920 milestone-card--chart-anchored"
+      class="milestone-card is-active milestone-card--chart-note milestone-card--chart-anchored"
       style:left={`${yearToX(1920)}px`}
       style:bottom={`${height - womenMedicsMarkerY + chartCardMarkerGap}px`}
     >
@@ -1083,6 +1094,18 @@
           <cite>University of Edinburgh Journal</cite> 49, no. 4 (Winter 2020): 293–302.
         </p>
       </div>
+    </div>
+  {/if}
+
+  {#if pausedMilestoneId === "pause-1965"}
+    <div
+      class="milestone-card is-active milestone-card--chart-note milestone-card--chart-anchored"
+      style:left={`${yearToX(1965)}px`}
+      style:bottom={`${height - womenMedicsMarkerY + chartCardMarkerGap}px`}
+    >
+      <p class="milestone-card-title">
+        Let's compare the numbers with available data for men.
+      </p>
     </div>
   {/if}
 
@@ -1537,7 +1560,7 @@
     width: min(500px, calc(100vw - 32px));
   }
 
-  .milestone-card--1920.is-active {
+  .milestone-card--chart-note.is-active {
     width: 300px;
     padding: 0.5rem;
     gap: 0.5rem;
@@ -1547,11 +1570,11 @@
     transform: translateX(-50%);
   }
 
-  .milestone-card--1920 .milestone-card-title {
+  .milestone-card--chart-note .milestone-card-title {
     margin: 0;
   }
 
-  .milestone-card--1920 .milestone-map-credit {
+  .milestone-card--chart-note .milestone-map-credit {
     font-style: normal;
   }
 

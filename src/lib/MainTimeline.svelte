@@ -61,7 +61,9 @@
   let expandedMilestonePathLength = 0;
   let inactiveMilestoneLabelXs = new Map<string, number>();
   let milestoneComponents: Record<string, Milestone | null> = {};
+  let uniAreaChart: UniAreaChart;
   export const isSettled = () =>
+    (uniAreaChart?.isSettled() ?? true) &&
     Object.values(milestoneComponents).every(
       (component) => !component || component.isSettled(),
     );
@@ -362,6 +364,7 @@
     />
 
     <UniAreaChart
+      bind:this={uniAreaChart}
       bind:markerY={womenMedicsMarkerY}
       {width}
       {currentYear}
@@ -371,6 +374,7 @@
       {yearToX}
       {womenMedicsData}
       {menMedicsData}
+      menComparisonActive={pausedMilestoneId === "pause-1965"}
     />
 
     {#each visibleMilestones as milestone (milestone.id)}
