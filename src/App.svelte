@@ -187,9 +187,9 @@
       label: "",
     },
     {
-      id: "pause-1965",
-      year: 1965,
-      contentYear: 1965,
+      id: "pause-1966",
+      year: 1966,
+      contentYear: 1966,
       label: "",
       renderOnTimeline: false,
     },
@@ -242,6 +242,7 @@
   let activeMilestoneIndex = -1;
   let pausedAtYear: number | null = null;
   let pausedMilestoneId: string | null = null;
+  let menComparisonRequested = false;
   let csvDataReady = false;
   let jsonDataReady = false;
   let fontsReady = false;
@@ -663,6 +664,9 @@
 
   const finishAtMilestone = (index: number) => {
     const milestone = milestones[index];
+    if (milestone?.id === "pause-1966") {
+      menComparisonRequested = false;
+    }
     activeMilestoneIndex = index;
     currentYear = milestone?.year ?? endYear;
     pausedAtYear = milestone?.year ?? null;
@@ -732,10 +736,25 @@
   };
 
   const handleNextMilestone = () => {
+    if (
+      pausedMilestoneId === "pause-1966" &&
+      !menComparisonRequested
+    ) {
+      menComparisonRequested = true;
+      isStepReady = false;
+      stepError = "";
+      navigationDirection = 1;
+      waitForStep();
+      return;
+    }
+
     advanceToMilestone(activeMilestoneIndex + 1);
   };
 
   const handlePreviousMilestone = () => {
+    if (pausedMilestoneId === "pause-1966") {
+      menComparisonRequested = false;
+    }
     advanceToMilestone(activeMilestoneIndex - 1);
   };
 
@@ -1062,6 +1081,7 @@
     {axisRight}
     {milestones}
     {pausedMilestoneId}
+    {menComparisonRequested}
     activeMilestoneStemTipBottomOffset={pausedMilestoneId === "international-female-medics"
       ? height - womenMedicsMarkerY + chartCardMarkerGap - milestoneCardStemGap
       : activeMilestoneStemTipBottomOffset}
@@ -1097,10 +1117,10 @@
     </div>
   {/if}
 
-  {#if pausedMilestoneId === "pause-1965"}
+  {#if pausedMilestoneId === "pause-1966" && menComparisonRequested}
     <div
       class="milestone-card is-active milestone-card--chart-note milestone-card--chart-anchored"
-      style:left={`${yearToX(1965)}px`}
+      style:left={`${yearToX(1966)}px`}
       style:bottom={`${height - womenMedicsMarkerY + chartCardMarkerGap}px`}
     >
       <p class="milestone-card-title">
@@ -1117,7 +1137,6 @@
       class:milestone-card--edinburgh-forty={year === 1869}
       class:milestone-card--women-doctors-1911={year === 1911}
       class:milestone-card--narrow={year === 1926}
-      class:milestone-card--chart-anchored={year === 1926}
       class:milestone-card--split={splitMilestoneYears.has(year)}
       class:is-active={pausedMilestoneId === milestone.id}
       style:display={milestone.renderOnTimeline === false ? "none" : undefined}

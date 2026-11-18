@@ -6,6 +6,7 @@
   export let timelineY: number;
   export let yearToX: (year: number) => number;
   export let womenMedicsData: WomenMedicsDatum[] = [];
+  export let showTimelineMarker = false;
 
   type WomenMedicsDatum = {
     year: number;
@@ -105,7 +106,7 @@
   $: markerX = yearToX(currentYear);
   $: markerY = currentValue === null ? timelineY : doctorCountYScale(currentValue);
   $: markerLabel = currentValue === null ? "" : `${Math.round(currentValue)}`;
-  $: showMarker =
+  $: hasCurrentValueMarker =
     currentValue !== null &&
     currentYear <= (doctorYearCounts.at(-1)?.year ?? currentYear);
 </script>
@@ -116,10 +117,10 @@
     {#if doctorLinePath}
       <path class="doctor-area-line" d={doctorLinePath} />
     {/if}
-    {#if showMarker}
-      <circle class="doctor-line-head" cx={markerX} cy={markerY} r="4" />
-      <text class="doctor-line-head-label" x={markerX + 8} y={markerY + 3}>
-        {markerLabel}
+    {#if showTimelineMarker && hasCurrentValueMarker}
+      <circle class="doctor-line-head" cx={markerX} cy={markerY} r="7" />
+      <text class="doctor-line-head-label" x={markerX + 10} y={markerY + 3}>
+        {markerLabel + " students"}
       </text>
     {/if}
   {/if}
@@ -138,12 +139,18 @@
   }
 
   .doctor-line-head {
-    fill: rgb(180, 180, 180);
+    fill: #fff;
+    stroke: black;
+    stroke-width: 2;
   }
 
   .doctor-line-head-label {
-    fill: rgb(180, 180, 180);
+    fill: rgb(255, 255, 255);
     font-size: 11px;
+    stroke: black;
+    stroke-width: 3px;
+    stroke-linejoin: round;
+    paint-order: stroke fill;
     pointer-events: none;
   }
 </style>

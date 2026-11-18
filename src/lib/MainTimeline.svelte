@@ -27,6 +27,7 @@
   export let axisRight: number;
   export let milestones: TimelineMilestone[] = [];
   export let pausedMilestoneId: string | null = null;
+  export let menComparisonRequested = false;
   export let activeMilestoneStemTipBottomOffset = 90;
   export let womenDoctorsData: unknown = [];
   export let womenMedicsData: WomenMedicsDatum[] = [];
@@ -41,6 +42,9 @@
   const inactiveMilestoneLabelGap = 2;
   const activeMilestoneLabelGap = 6;
   const womenMedicsAreaChartStartYear = 1914;
+  const womenMedicsAreaChartOverlapYear = 1916;
+  const womenMedicsMarkerStartYear = 1916;
+  const womenMedicsMarkerEndYear = 1966;
   const areaChartMilestoneLabelGap = 1;
   const womenMedicalEducationPeriodStartYear = 1886;
   const womenMedicalEducationPeriodEndYear = 1911;
@@ -99,6 +103,15 @@
   $: displayYear = Math.floor(currentYear);
   $: isCurrentYearInTimelineDomain =
     currentYear >= timelineDomainStart && currentYear <= timelineDomainEnd;
+  // During the expanded medical-education period, the doctors chart takes
+  // ownership of the travelling marker. The endpoints deliberately hand off
+  // at 1886 and back at 1911.
+  $: isDoctorsChartMarkerActive =
+    currentYear >= womenMedicalEducationPeriodStartYear &&
+    currentYear < womenMedicalEducationPeriodEndYear;
+  $: isWomenMedicsChartMarkerActive =
+    currentYear >= womenMedicsMarkerStartYear &&
+    currentYear <= womenMedicsMarkerEndYear;
   const buildRenderedMilestones = (maximumYear = Number.POSITIVE_INFINITY) => {
     const milestonesByYear = new Map<number, TimelineMilestone[]>();
 
@@ -129,10 +142,14 @@
     for (const milestone of [...timelineMilestones].reverse()) {
       const targetX = yearToX(milestone.year);
 
-      // The spacing rule protects the chart that begins in 1914. It only
-      // applies to milestones before that chart; later milestones must remain
-      // anchored to their own years instead of being pulled back to 1914.
-      if (milestone.year >= womenMedicsAreaChartStartYear) {
+      // The spacing rule protects the chart that begins in 1914. Keep 1916
+      // in this pass so its inactive stem sits left of the chart, then let
+      // the nearby 1911 milestone retain the standard gap to its left.
+      // Later milestones remain anchored to their own years.
+      if (
+        milestone.year >= womenMedicsAreaChartStartYear &&
+        milestone.year !== womenMedicsAreaChartOverlapYear
+      ) {
         labelXs.set(milestone.id, targetX);
         continue;
       }
@@ -344,23 +361,13 @@
       {yearToX}
     /> -->
 
-    {#if isCurrentYearInTimelineDomain}
-      <circle
-        cx={currentYearX}
-        cy={timelineY}
-        r="7"
-        fill="#fff"
-        stroke="black"
-        stroke-width="2"
-      ></circle>
-    {/if}
-
     <DoctorsAreaChart
       {womenDoctorsData}
       {currentYear}
       {timelineY}
       {yearToX}
       {womenMedicsData}
+      showTimelineMarker={isDoctorsChartMarkerActive}
     />
 
     <UniAreaChart
@@ -374,7 +381,8 @@
       {yearToX}
       {womenMedicsData}
       {menMedicsData}
-      menComparisonActive={pausedMilestoneId === "pause-1965"}
+      menComparisonActive={menComparisonRequested}
+      showWomenMedicsMarker={isWomenMedicsChartMarkerActive}
     />
 
     {#each visibleMilestones as milestone (milestone.id)}
@@ -461,6 +469,20 @@
           text-anchor="middle">Women: 110 years</text
         >
       </g>
+    {/if}
+
+    <!-- Render last so the travelling timeline marker remains above every chart and milestone layer. -->
+    {#if isCurrentYearInTimelineDomain && !isDoctorsChartMarkerActive}
+      <circle
+        cx={currentYearX}
+        cy={isWomenMedicsChartMarkerActive
+          ? womenMedicsMarkerY
+          : timelineY}
+        r="7"
+        fill="#fff"
+        stroke="black"
+        stroke-width="2"
+      ></circle>
     {/if}
   {/if}
 </svg>

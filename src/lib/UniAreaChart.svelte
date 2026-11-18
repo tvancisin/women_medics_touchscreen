@@ -13,6 +13,7 @@
   export let womenMedicsData: WomenMedicsDatum[] = [];
   export let menMedicsData: WomenMedicsDatum[] = [];
   export let menComparisonActive = false;
+  export let showWomenMedicsMarker = false;
   // Share the actual chart position with the HTML note anchored above it.
   export let markerY = 0;
 
@@ -20,10 +21,10 @@
   const chartPaddingTop = 50;
   const menMissingDataStartYear = 1833;
   const trailingMissingDataEndYear = 1970;
-  const menComparisonStartYear = 1965;
+  const menComparisonStartYear = 1966;
   const menChartStartYear = 1836;
   const menChartEndYear = 1966;
-  const menChartYearsPerSecond = 5;
+  const menChartYearsPerSecond = 10;
   let menDrawYear = menChartStartYear;
   let menAnimationFrameId: number | null = null;
   let hasStartedMenComparison = false;
@@ -49,9 +50,10 @@
     menAnimationFrameId = requestAnimationFrame(step);
   };
 
-  $: showMenComparison = currentYear >= menComparisonStartYear;
+  $: showMenComparison =
+    menComparisonActive && currentYear >= menComparisonStartYear;
   // Like the main timeline, this data sequence has its own animated year.
-  // It runs through the complete men's series while the main year stays 1965.
+  // It runs through the complete men's series while the main year stays 1966.
   $: if (menComparisonActive && menMedicsData.length && !hasStartedMenComparison) {
     startMenComparison();
   } else if (!menComparisonActive && hasStartedMenComparison) {
@@ -127,7 +129,7 @@
 
   // Show the comparison scale with the men's series. Its horizontal tick
   // lines double as a full-width grid.
-  $: showYAxis = currentYear >= menComparisonStartYear && maxY > 0;
+  $: showYAxis = showMenComparison && maxY > 0;
   // D3 orders ticks from the bottom value to the top value. Remove that
   // final tick so the y-axis does not have a tick at its upper endpoint.
   $: yTickValues = showYAxis
@@ -198,35 +200,9 @@
     .y((d) => yScale(d.number))(menMissingnessData);
 
   $: showMenMissingness =
-    currentYear >= menComparisonStartYear && menMissingnessData.length === 2 && menMissingnessPath;
-
-  $: womenTrailingMissingnessData = (() => {
-    const last = sortedData.at(-1);
-    const previous = sortedData.at(-2);
-
-    if (!last || !previous || last.year >= trailingMissingDataEndYear) return [];
-
-    const yearlyChange =
-      (last.number - previous.number) / (last.year - previous.year);
-
-    return [
-      last,
-      {
-        year: trailingMissingDataEndYear,
-        number: last.number + (trailingMissingDataEndYear - last.year) * yearlyChange,
-      },
-    ];
-  })();
-
-  $: womenTrailingMissingnessPath = d3
-    .line<WomenMedicsDatum>()
-    .x((d) => yearToX(d.year))
-    .y((d) => yScale(d.number))(womenTrailingMissingnessData);
-
-  $: showWomenTrailingMissingness =
-    currentYear >= (sortedData.at(-1)?.year ?? Infinity) &&
-    womenTrailingMissingnessData.length === 2 &&
-    womenTrailingMissingnessPath;
+    showMenComparison &&
+    menMissingnessData.length === 2 &&
+    menMissingnessPath;
 
   // Continue the final observed direction for a short distance beyond the
   // men's data to signal where the series becomes unavailable.
@@ -346,22 +322,6 @@
   </defs>
 {/if}
 
-{#if showWomenTrailingMissingness}
-  <defs>
-    <linearGradient
-      id="women-trailing-missingness-gradient"
-      gradientUnits="userSpaceOnUse"
-      x1={yearToX(womenTrailingMissingnessData[0].year)}
-      y1={yScale(womenTrailingMissingnessData[0].number)}
-      x2={yearToX(womenTrailingMissingnessData[1].year)}
-      y2={yScale(womenTrailingMissingnessData[1].number)}
-    >
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
-    </linearGradient>
-  </defs>
-{/if}
-
 {#if showYAxis}
   <g class="y-axis" aria-label="Number of medical students">
     <line
@@ -385,8 +345,7 @@
   {#if linePath}
     <path d={linePath} class="area-top-line" fill="none" />
   {/if}
-  {#if currentValue !== null && currentYear <= 1966 && currentYearIsVisible}
-    <circle class="line-head" cx={markerX} cy={markerY} r="4" />
+  {#if showWomenMedicsMarker && currentValue !== null && currentYearIsVisible}
     <text class="line-head-label" x={markerX + 8} y={markerY + 3}>
       {markerLabel}
     </text>
@@ -394,20 +353,6 @@
   <!-- {#if projectionPath}
     <path d={projectionPath} class="projection-line" fill="none" />
   {/if} -->
-{/if}
-
-{#if showWomenTrailingMissingness}
-  <path
-    d={womenTrailingMissingnessPath}
-    class="women-missingness-line"
-    fill="none"
-    aria-label="Estimated trend after women's student data ends"
-  />
-  <text
-    class="women-missingness-label"
-    x={yearToX(womenTrailingMissingnessData[1].year) + 6}
-    y={yScale(womenTrailingMissingnessData[1].number) - 6}
-  >no data</text>
 {/if}
 
 {#if showMenMissingness}
@@ -523,11 +468,6 @@
     stroke-width: 1;
   }
 
-  .women-missingness-line {
-    stroke: url(#women-trailing-missingness-gradient);
-    stroke-width: 1;
-  }
-
   .men-missingness-line[aria-label="Estimated trend before men's student data begins"] {
     stroke: url(#men-missingness-gradient);
   }
@@ -538,12 +478,6 @@
 
   .men-missingness-label {
     fill: rgba(125, 211, 252, 0.7);
-    font-size: 11px;
-    pointer-events: none;
-  }
-
-  .women-missingness-label {
-    fill: rgba(255, 255, 255, 0.7);
     font-size: 11px;
     pointer-events: none;
   }
